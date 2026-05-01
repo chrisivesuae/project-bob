@@ -1,0 +1,531 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Project Bob</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&family=DM+Mono:wght@400;500&display=swap');
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --bg: #f4f6f9; --surface: #ffffff; --surface2: #f8f9fb;
+    --border: #e4e8ef; --border2: #d0d6e0;
+    --text: #1a2035; --text2: #5a6478; --text3: #9aa3b4;
+    --accent: #2563eb; --accent-light: #eff4ff; --accent-border: #bfcffd;
+    --green: #16a34a; --green-light: #f0fdf4; --green-border: #bbf7d0;
+    --amber: #d97706; --amber-light: #fffbeb;
+    --red: #dc2626; --red-light: #fef2f2;
+    --purple: #7c3aed; --purple-light: #f5f3ff;
+    --radius: 10px; --radius-sm: 6px;
+    --shadow: 0 1px 3px rgba(0,0,0,0.08);
+    --shadow-md: 0 4px 12px rgba(0,0,0,0.1);
+  }
+  body { font-family: 'DM Sans', sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; font-size: 14px; line-height: 1.6; }
+
+  /* SETUP SCREEN */
+  #setup-screen { min-height: 100vh; display: flex; align-items: center; justify-content: center; }
+  .setup-card { background: var(--surface); border: 1px solid var(--border); border-radius: 16px; padding: 48px 40px; max-width: 440px; width: 100%; box-shadow: var(--shadow-md); }
+  .setup-logo { width: 52px; height: 52px; border-radius: 13px; background: linear-gradient(135deg, #2563eb, #6366f1); display: flex; align-items: center; justify-content: center; font-size: 24px; font-weight: 800; color: #fff; margin: 0 auto 20px; box-shadow: 0 4px 14px rgba(37,99,235,0.35); }
+  .setup-title { font-size: 20px; font-weight: 600; text-align: center; margin-bottom: 6px; }
+  .setup-sub { font-size: 13px; color: var(--text2); text-align: center; margin-bottom: 28px; line-height: 1.5; }
+  .setup-label { font-size: 12px; font-weight: 500; color: var(--text2); margin-bottom: 6px; display: block; }
+  .setup-input { width: 100%; padding: 10px 13px; border: 1px solid var(--border2); border-radius: var(--radius-sm); font-size: 13px; color: var(--text); background: var(--surface2); outline: none; font-family: 'DM Mono', monospace; letter-spacing: 0.03em; }
+  .setup-input:focus { border-color: var(--accent); background: var(--surface); }
+  .setup-note { font-size: 11px; color: var(--text3); margin-top: 8px; line-height: 1.5; }
+  .setup-btn { width: 100%; padding: 11px; border-radius: var(--radius-sm); background: var(--accent); color: #fff; border: none; font-size: 14px; font-weight: 600; cursor: pointer; font-family: 'DM Sans', sans-serif; margin-top: 20px; box-shadow: 0 2px 8px rgba(37,99,235,0.3); }
+  .setup-btn:hover { background: #1d4ed8; }
+  .setup-error { font-size: 12px; color: var(--red); margin-top: 8px; display: none; }
+
+  /* MAIN APP */
+  #app { display: none; flex-direction: column; min-height: 100vh; }
+  #app.visible { display: flex; }
+  header { background: var(--surface); border-bottom: 1px solid var(--border); padding: 0 24px; height: 60px; display: flex; align-items: center; justify-content: space-between; position: sticky; top: 0; z-index: 100; box-shadow: var(--shadow); }
+  .header-left { display: flex; align-items: center; gap: 14px; }
+  .bob-logo { width: 36px; height: 36px; background: linear-gradient(135deg, #2563eb, #6366f1); border-radius: 9px; display: flex; align-items: center; justify-content: center; font-size: 17px; font-weight: 700; color: #fff; box-shadow: 0 2px 8px rgba(37,99,235,0.35); }
+  .header-title { font-size: 15px; font-weight: 600; color: var(--text); }
+  .header-sub { font-size: 11px; color: var(--text3); font-family: 'DM Mono', monospace; margin-top: 1px; }
+  .header-right { display: flex; align-items: center; gap: 10px; }
+
+  main { display: flex; flex: 1; height: calc(100vh - 60px); overflow: hidden; }
+
+  aside { width: 220px; flex-shrink: 0; background: var(--surface); border-right: 1px solid var(--border); display: flex; flex-direction: column; overflow-y: auto; }
+  .sidebar-section { padding: 16px 12px 8px; }
+  .sidebar-label { font-size: 10px; font-weight: 600; color: var(--text3); letter-spacing: 0.08em; text-transform: uppercase; padding: 0 8px; margin-bottom: 6px; }
+  .project-item { display: flex; align-items: center; gap: 8px; padding: 8px 10px; border-radius: var(--radius-sm); cursor: pointer; transition: all 0.15s; color: var(--text2); font-size: 13px; }
+  .project-item:hover { background: var(--surface2); color: var(--text); }
+  .project-item.active { background: var(--accent-light); color: var(--accent); font-weight: 500; }
+  .project-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--border2); flex-shrink: 0; }
+  .project-item.active .project-dot { background: var(--accent); }
+  .sidebar-bottom { padding: 12px; border-top: 1px solid var(--border); margin-top: auto; display: flex; flex-direction: column; gap: 6px; }
+  .add-project-btn { width: 100%; padding: 8px; border-radius: var(--radius-sm); border: 1.5px dashed var(--border2); background: transparent; color: var(--text3); font-size: 12px; cursor: pointer; font-family: 'DM Sans', sans-serif; transition: all 0.15s; }
+  .add-project-btn:hover { border-color: var(--accent); color: var(--accent); background: var(--accent-light); }
+  .settings-btn { width: 100%; padding: 7px; border-radius: var(--radius-sm); border: 1px solid var(--border); background: transparent; color: var(--text3); font-size: 11px; cursor: pointer; font-family: 'DM Sans', sans-serif; }
+  .settings-btn:hover { background: var(--surface2); color: var(--text2); }
+
+  .content { flex: 1; overflow-y: auto; padding: 24px; }
+
+  .btn { display: inline-flex; align-items: center; gap: 6px; padding: 8px 16px; border-radius: var(--radius-sm); font-size: 13px; font-weight: 500; cursor: pointer; border: 1px solid transparent; transition: all 0.15s; font-family: 'DM Sans', sans-serif; }
+  .btn-primary { background: var(--accent); color: #fff; border-color: var(--accent); box-shadow: 0 1px 4px rgba(37,99,235,0.25); }
+  .btn-primary:hover { background: #1d4ed8; }
+  .btn-secondary { background: var(--surface); color: var(--text2); border-color: var(--border2); }
+  .btn-secondary:hover { background: var(--surface2); color: var(--text); }
+  .btn-sm { padding: 5px 12px; font-size: 12px; }
+  .btn-danger { background: none; border-color: #fecaca; color: var(--red); font-size: 11px; padding: 4px 10px; }
+
+  .stats-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 22px; }
+  .stat-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 14px 16px; box-shadow: var(--shadow); }
+  .stat-label { font-size: 11px; color: var(--text3); font-weight: 500; text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 6px; }
+  .stat-num { font-size: 26px; font-weight: 600; color: var(--text); line-height: 1; }
+  .stat-sub { font-size: 11px; color: var(--text3); margin-top: 4px; }
+
+  .tabs { display: flex; gap: 2px; border-bottom: 1px solid var(--border); margin-bottom: 16px; }
+  .tab { padding: 9px 16px; font-size: 13px; color: var(--text2); cursor: pointer; border: none; background: none; border-bottom: 2px solid transparent; margin-bottom: -1px; transition: all 0.15s; font-family: 'DM Sans', sans-serif; }
+  .tab:hover { color: var(--text); }
+  .tab.active { color: var(--accent); border-bottom-color: var(--accent); font-weight: 500; }
+  .tab-badge { display: inline-flex; align-items: center; justify-content: center; min-width: 18px; height: 18px; padding: 0 5px; border-radius: 9px; font-size: 10px; font-weight: 600; background: var(--surface2); color: var(--text3); margin-left: 5px; }
+  .tab.active .tab-badge { background: var(--accent-light); color: var(--accent); }
+
+  .item-list { display: flex; flex-direction: column; gap: 8px; }
+  .item-card { background: var(--surface); border: 1px solid var(--border); border-left: 3px solid var(--border2); border-radius: var(--radius); padding: 13px 15px; box-shadow: var(--shadow); display: flex; gap: 12px; align-items: flex-start; transition: box-shadow 0.15s; }
+  .item-card:hover { box-shadow: var(--shadow-md); }
+  .item-card.open { border-left-color: var(--accent); }
+  .item-card.in-progress { border-left-color: var(--green); }
+  .item-card.done-card { border-left-color: var(--border2); opacity: 0.55; }
+  .item-card.decision { border-left-color: var(--purple); }
+  .item-card.high { border-left-color: var(--red); }
+  .item-card.medium { border-left-color: var(--amber); }
+  .item-card.low { border-left-color: var(--green); }
+  .item-body { flex: 1; min-width: 0; }
+  .item-title { font-size: 13px; color: var(--text); margin-bottom: 5px; line-height: 1.5; }
+  .item-title.done { text-decoration: line-through; }
+  .item-meta-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+  .chip { display: inline-flex; align-items: center; font-size: 11px; padding: 2px 8px; border-radius: 10px; font-weight: 500; white-space: nowrap; }
+  .chip-blue { background: var(--accent-light); color: var(--accent); }
+  .chip-green { background: var(--green-light); color: var(--green); }
+  .chip-amber { background: var(--amber-light); color: var(--amber); }
+  .chip-red { background: var(--red-light); color: var(--red); }
+  .chip-purple { background: var(--purple-light); color: var(--purple); }
+  .chip-gray { background: var(--surface2); color: var(--text3); }
+  .chip-new { background: #eff6ff; color: #1d4ed8; border: 1px solid #bfdbfe; }
+  .item-source { font-size: 11px; color: var(--text3); font-style: italic; }
+  select.status-select { font-size: 11px; padding: 4px 8px; border-radius: var(--radius-sm); border: 1px solid var(--border2); background: var(--surface); color: var(--text2); cursor: pointer; flex-shrink: 0; font-family: 'DM Sans', sans-serif; }
+  .empty { text-align: center; padding: 50px 20px; color: var(--text3); font-size: 13px; }
+
+  .feed-panel { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 18px; margin-bottom: 20px; box-shadow: var(--shadow); }
+  .feed-label { font-size: 11px; font-weight: 600; color: var(--text3); letter-spacing: 0.07em; text-transform: uppercase; margin-bottom: 12px; }
+  .type-pills { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 12px; }
+  .type-pill { font-size: 12px; padding: 5px 13px; border-radius: 20px; border: 1px solid var(--border2); background: transparent; color: var(--text2); cursor: pointer; transition: all 0.15s; font-family: 'DM Sans', sans-serif; }
+  .type-pill:hover { border-color: var(--accent); color: var(--accent); }
+  .type-pill.active { background: var(--accent-light); border-color: var(--accent-border); color: var(--accent); font-weight: 500; }
+  textarea.feed-ta { width: 100%; min-height: 120px; padding: 11px 13px; border: 1px solid var(--border2); border-radius: var(--radius-sm); font-size: 13px; color: var(--text); background: var(--surface2); resize: vertical; outline: none; line-height: 1.6; font-family: 'DM Sans', sans-serif; transition: border-color 0.15s; }
+  textarea.feed-ta:focus { border-color: var(--accent); background: var(--surface); }
+
+  .processing-indicator { display: flex; align-items: center; gap: 10px; padding: 12px 14px; background: var(--accent-light); border: 1px solid var(--accent-border); border-radius: var(--radius-sm); font-size: 13px; color: var(--accent); margin-top: 10px; }
+  .spinner { width: 14px; height: 14px; border: 2px solid var(--accent-border); border-top-color: var(--accent); border-radius: 50%; animation: spin 0.7s linear infinite; flex-shrink: 0; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  .analysis-box { background: var(--green-light); border: 1px solid var(--green-border); border-radius: var(--radius); padding: 14px 16px; margin-bottom: 16px; }
+  .analysis-label { font-size: 11px; font-weight: 600; color: var(--green); letter-spacing: 0.07em; text-transform: uppercase; margin-bottom: 6px; }
+  .analysis-summary { font-size: 13px; color: #166534; line-height: 1.5; margin-bottom: 6px; }
+  .analysis-change { font-size: 12px; color: #166534; margin-top: 3px; font-family: 'DM Mono', monospace; }
+
+  .project-header { display: flex; align-items: flex-start; justify-content: space-between; flex-wrap: wrap; gap: 12px; margin-bottom: 22px; }
+  .project-title { font-size: 20px; font-weight: 600; color: var(--text); }
+  .project-meta { font-size: 12px; color: var(--text3); margin-top: 3px; font-family: 'DM Mono', monospace; }
+
+  .modal-backdrop { position: fixed; inset: 0; background: rgba(0,0,0,0.4); display: flex; align-items: center; justify-content: center; z-index: 200; padding: 20px; }
+  .modal { background: var(--surface); border-radius: 14px; padding: 28px; max-width: 520px; width: 100%; max-height: 80vh; overflow-y: auto; box-shadow: 0 20px 60px rgba(0,0,0,0.2); }
+  .modal-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 18px; }
+  .modal-title { font-size: 15px; font-weight: 600; color: var(--text); }
+  .modal-close { background: none; border: none; color: var(--text3); font-size: 22px; cursor: pointer; padding: 2px 6px; border-radius: 4px; line-height: 1; }
+  .modal-close:hover { background: var(--surface2); }
+  .modal-body { font-size: 13px; color: var(--text2); line-height: 1.8; white-space: pre-wrap; }
+  .form-group { margin-bottom: 14px; }
+  .form-label { font-size: 12px; font-weight: 500; color: var(--text2); margin-bottom: 5px; display: block; }
+  .form-input { width: 100%; padding: 8px 12px; border: 1px solid var(--border2); border-radius: var(--radius-sm); font-size: 13px; color: var(--text); background: var(--surface); outline: none; font-family: 'DM Sans', sans-serif; }
+  .form-input:focus { border-color: var(--accent); }
+
+  .toast { position: fixed; bottom: 20px; right: 20px; background: var(--text); color: #fff; padding: 10px 18px; border-radius: var(--radius-sm); font-size: 13px; font-weight: 500; opacity: 0; transform: translateY(8px); transition: all 0.25s; pointer-events: none; z-index: 300; }
+  .toast.show { opacity: 1; transform: translateY(0); }
+  .no-project { display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100%; gap: 16px; color: var(--text3); }
+  .no-project-icon { font-size: 48px; opacity: 0.3; }
+</style>
+</head>
+<body>
+
+<!-- SETUP SCREEN -->
+<div id="setup-screen">
+  <div class="setup-card">
+    <div class="setup-logo">B</div>
+    <div class="setup-title">Welcome to Project Bob</div>
+    <div class="setup-sub">Enter your Anthropic API key to get started. It will be saved locally on your computer and never shared.</div>
+    <div class="form-group">
+      <label class="setup-label">Anthropic API Key</label>
+      <input class="setup-input" type="password" id="api-key-input" placeholder="sk-ant-api03-..." onkeydown="if(event.key==='Enter')saveKey()" />
+      <div class="setup-note">Your key is stored only in your browser's local storage on this computer. Get your key from console.anthropic.com</div>
+      <div class="setup-error" id="setup-error">Invalid key — please check and try again.</div>
+    </div>
+    <button class="setup-btn" onclick="saveKey()">Start Project Bob →</button>
+  </div>
+</div>
+
+<!-- MAIN APP -->
+<div id="app">
+  <header>
+    <div class="header-left">
+      <div class="bob-logo">B</div>
+      <div>
+        <div class="header-title">Project Bob</div>
+        <div class="header-sub">AI Project Intelligence · Warwick Bailey Associates</div>
+      </div>
+    </div>
+    <div class="header-right">
+      <button class="btn btn-secondary btn-sm" onclick="showEOD()">End-of-Day Brief</button>
+      <button class="btn btn-primary btn-sm" onclick="showNewProject()">+ New Project</button>
+    </div>
+  </header>
+  <main>
+    <aside>
+      <div class="sidebar-section">
+        <div class="sidebar-label">Projects</div>
+        <div id="project-list"></div>
+      </div>
+      <div class="sidebar-bottom">
+        <button class="add-project-btn" onclick="showNewProject()">+ Add Project</button>
+        <button class="settings-btn" onclick="showSettings()">⚙ Settings / API Key</button>
+      </div>
+    </aside>
+    <div class="content" id="content">
+      <div class="no-project">
+        <div class="no-project-icon">📋</div>
+        <div style="font-size:14px;">Add a project to get started</div>
+        <button class="btn btn-primary" onclick="showNewProject()">+ New Project</button>
+      </div>
+    </div>
+  </main>
+</div>
+
+<!-- EOD MODAL -->
+<div class="modal-backdrop" id="eod-modal" style="display:none;">
+  <div class="modal">
+    <div class="modal-header">
+      <div class="modal-title">📋 End-of-Day Brief</div>
+      <button class="modal-close" onclick="closeModal('eod-modal')">×</button>
+    </div>
+    <div id="eod-body" class="modal-body">Generating your brief...</div>
+  </div>
+</div>
+
+<!-- NEW PROJECT MODAL -->
+<div class="modal-backdrop" id="new-project-modal" style="display:none;">
+  <div class="modal" style="max-width:420px;">
+    <div class="modal-header">
+      <div class="modal-title">New Project</div>
+      <button class="modal-close" onclick="closeModal('new-project-modal')">×</button>
+    </div>
+    <div class="form-group">
+      <label class="form-label">Project name</label>
+      <input class="form-input" id="new-project-name" placeholder="e.g. Meltonad Biogas" onkeydown="if(event.key==='Enter')addProject()" />
+    </div>
+    <div class="form-group">
+      <label class="form-label">Description (optional)</label>
+      <input class="form-input" id="new-project-desc" placeholder="Brief description..." />
+    </div>
+    <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:6px;">
+      <button class="btn btn-secondary btn-sm" onclick="closeModal('new-project-modal')">Cancel</button>
+      <button class="btn btn-primary btn-sm" onclick="addProject()">Create Project</button>
+    </div>
+  </div>
+</div>
+
+<!-- SETTINGS MODAL -->
+<div class="modal-backdrop" id="settings-modal" style="display:none;">
+  <div class="modal" style="max-width:420px;">
+    <div class="modal-header">
+      <div class="modal-title">⚙ Settings</div>
+      <button class="modal-close" onclick="closeModal('settings-modal')">×</button>
+    </div>
+    <div class="form-group">
+      <label class="form-label">Anthropic API Key</label>
+      <input class="form-input" type="password" id="settings-key-input" placeholder="sk-ant-api03-..." style="font-family:'DM Mono',monospace;" />
+      <div class="setup-note" style="margin-top:6px;">Stored locally on your computer only. Get your key from console.anthropic.com</div>
+    </div>
+    <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:6px;">
+      <button class="btn btn-secondary btn-sm" onclick="closeModal('settings-modal')">Cancel</button>
+      <button class="btn btn-primary btn-sm" onclick="updateKey()">Save Key</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+const SK = "pob-final-v1";
+const KEY_SK = "pob-api-key";
+const INPUT_TYPES = ["Meeting Notes","Email","Letter","Phone Call","Document","Other"];
+const BOB_SYSTEM = `You are Bob, an intelligent project management AI. Analyze input content and update a project's lists.
+Respond ONLY with a valid JSON object (no markdown, no backticks):
+{"summary":"1-2 sentence summary","tasks":[{"id":"uid","text":"task","owner":null,"due":null,"status":"open","source":"source","isNew":true}],"decisions":[{"id":"uid","text":"decision","by":null,"date":null,"source":"source","isNew":true}],"risks":[{"id":"uid","text":"risk","severity":"low|medium|high","owner":null,"source":"source","isNew":true}],"changes":["what changed"]}
+Rules: MERGE with existing items, never duplicate. isNew:true only for brand new items. Preserve ALL existing items. Return ALL items in each array.`;
+
+let db = { projects: [] };
+let activeProject = null;
+let activeTab = "tasks";
+let activeType = "Meeting Notes";
+let showFeed = false;
+let currentAnalysis = null;
+let isProcessing = false;
+
+// ---- KEY MANAGEMENT ----
+function getKey() { return localStorage.getItem(KEY_SK) || ""; }
+function saveKey() {
+  const k = document.getElementById("api-key-input").value.trim();
+  if(!k.startsWith("sk-ant-")) {
+    document.getElementById("setup-error").style.display = "block"; return;
+  }
+  localStorage.setItem(KEY_SK, k);
+  document.getElementById("setup-screen").style.display = "none";
+  document.getElementById("app").classList.add("visible");
+  loadDB(); renderSidebar(); renderContent();
+}
+function updateKey() {
+  const k = document.getElementById("settings-key-input").value.trim();
+  if(!k.startsWith("sk-ant-")) { showToast("Invalid key format"); return; }
+  localStorage.setItem(KEY_SK, k);
+  closeModal("settings-modal");
+  showToast("API key updated");
+}
+function showSettings() {
+  document.getElementById("settings-key-input").value = "";
+  document.getElementById("settings-modal").style.display = "flex";
+}
+
+// ---- DB ----
+function loadDB() { try { const s = localStorage.getItem(SK); if(s) db = JSON.parse(s); } catch{} }
+function saveDB() { try { localStorage.setItem(SK, JSON.stringify(db)); } catch{} }
+function getPS() { return db.projects.find(p=>p.id===activeProject); }
+function genId() { return Math.random().toString(36).substr(2,9); }
+
+// ---- API ----
+async function callBob(systemPrompt, userPrompt) {
+  const key = getKey();
+  const res = await fetch("https://api.anthropic.com/v1/messages", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "x-api-key": key, "anthropic-version": "2023-06-01", "anthropic-dangerous-direct-browser-access": "true" },
+    body: JSON.stringify({ model: "claude-3-5-sonnet-20241022", max_tokens: 1000, system: systemPrompt, messages: [{ role: "user", content: userPrompt }] })
+  });
+  if(!res.ok) throw new Error(`API error: ${res.status}`);
+  const data = await res.json();
+  const text = data.content?.find(b=>b.type==="text")?.text || "";
+  return text.replace(/```json|```/g,"").trim();
+}
+
+// ---- PROJECTS ----
+function showNewProject() {
+  document.getElementById("new-project-name").value = "";
+  document.getElementById("new-project-desc").value = "";
+  document.getElementById("new-project-modal").style.display = "flex";
+  setTimeout(()=>document.getElementById("new-project-name").focus(),100);
+}
+function addProject() {
+  const name = document.getElementById("new-project-name").value.trim();
+  if(!name) return;
+  const proj = { id:genId(), name, desc:document.getElementById("new-project-desc").value.trim(), tasks:[], decisions:[], risks:[], created:new Date().toISOString() };
+  db.projects.push(proj); saveDB();
+  closeModal("new-project-modal");
+  activeProject=proj.id; renderSidebar(); renderContent();
+  showToast(`Project "${name}" created`);
+}
+function selectProject(id) { activeProject=id; activeTab="tasks"; showFeed=false; currentAnalysis=null; renderSidebar(); renderContent(); }
+function deleteProject(id,e) {
+  e.stopPropagation();
+  const proj=db.projects.find(p=>p.id===id);
+  if(!proj||!confirm(`Delete "${proj.name}"? This cannot be undone.`)) return;
+  db.projects=db.projects.filter(p=>p.id!==id); saveDB();
+  if(activeProject===id) activeProject=db.projects.length?db.projects[0].id:null;
+  renderSidebar(); renderContent();
+}
+
+function renderSidebar() {
+  document.getElementById("project-list").innerHTML = db.projects.map(p=>`
+    <div class="project-item${activeProject===p.id?" active":""}" onclick="selectProject('${p.id}')">
+      <div class="project-dot"></div>
+      <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${p.name}</span>
+      <span onclick="deleteProject('${p.id}',event)" style="opacity:0;font-size:16px;color:var(--text3);line-height:1;padding:0 2px;" class="del-btn">×</span>
+    </div>`).join("");
+  document.querySelectorAll(".project-item").forEach(el=>{
+    el.addEventListener("mouseenter",()=>{ const b=el.querySelector(".del-btn"); if(b) b.style.opacity="1"; });
+    el.addEventListener("mouseleave",()=>{ const b=el.querySelector(".del-btn"); if(b) b.style.opacity="0"; });
+  });
+}
+
+// ---- CONTENT ----
+function renderContent() {
+  const cont = document.getElementById("content");
+  if(!activeProject||!db.projects.length) {
+    cont.innerHTML=`<div class="no-project"><div class="no-project-icon">📋</div><div style="font-size:14px;">Add a project to get started</div><button class="btn btn-primary" onclick="showNewProject()">+ New Project</button></div>`;
+    return;
+  }
+  const proj=getPS(); if(!proj) return;
+  const openT=proj.tasks.filter(t=>t.status!=="done").length;
+  const newT=proj.tasks.filter(t=>t.isNew).length;
+  const newD=proj.decisions.filter(d=>d.isNew).length;
+  const newR=proj.risks.filter(r=>r.isNew).length;
+
+  cont.innerHTML=`
+    <div class="project-header">
+      <div>
+        <div class="project-title">${proj.name}</div>
+        ${proj.desc?`<div class="project-meta">${proj.desc}</div>`:""}
+      </div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;">
+        <button class="btn btn-secondary btn-sm" onclick="toggleFeed()">${showFeed?"Hide Feed":"+ Feed Bob"}</button>
+        <button class="btn btn-primary btn-sm" onclick="showEOD()">End-of-Day Brief</button>
+      </div>
+    </div>
+    <div class="stats-row">
+      <div class="stat-card"><div class="stat-label">Open Tasks</div><div class="stat-num">${openT}</div><div class="stat-sub">${proj.tasks.filter(t=>t.status==="done").length} completed</div></div>
+      <div class="stat-card"><div class="stat-label">Decisions</div><div class="stat-num">${proj.decisions.length}</div><div class="stat-sub">logged this project</div></div>
+      <div class="stat-card"><div class="stat-label">Risks</div><div class="stat-num">${proj.risks.filter(r=>r.severity==="high").length} high / ${proj.risks.filter(r=>r.severity==="medium").length} med</div><div class="stat-sub">${proj.risks.length} total</div></div>
+    </div>
+    ${showFeed?renderFeedPanel():""}
+    ${currentAnalysis?renderAnalysis():""}
+    <div class="tabs">
+      ${renderTab("tasks","Tasks",openT,newT)}
+      ${renderTab("decisions","Decisions",proj.decisions.length,newD)}
+      ${renderTab("risks","Risks & Blockers",proj.risks.length,newR)}
+    </div>
+    <div class="item-list" id="item-list">${renderList()}</div>
+    <div style="margin-top:28px;display:flex;justify-content:flex-end;">
+      <button class="btn btn-danger" onclick="deleteProject('${proj.id}',event)">Delete Project</button>
+    </div>`;
+}
+
+function renderTab(id,label,count,nc) {
+  return `<button class="tab${activeTab===id?" active":""}" onclick="setTab('${id}')">${label}${count>0?`<span class="tab-badge">${count}</span>`:""}${nc>0?`<span class="tab-badge" style="background:#eff6ff;color:#1d4ed8;">${nc} new</span>`:""}</button>`;
+}
+
+function renderFeedPanel() {
+  return `<div class="feed-panel">
+    <div class="feed-label">Feed Bob · Choose input type</div>
+    <div class="type-pills">${INPUT_TYPES.map(t=>`<button class="type-pill${activeType===t?" active":""}" onclick="setType('${t}')">${t}</button>`).join("")}</div>
+    <textarea class="feed-ta" id="feed-ta" placeholder="Paste your ${activeType.toLowerCase()} here — Bob will automatically extract tasks, decisions and risks..."></textarea>
+    <div style="display:flex;justify-content:flex-end;margin-top:10px;">
+      <button class="btn btn-primary" id="process-btn" onclick="processFeed()">Process →</button>
+    </div>
+    <div id="processing-area"></div>
+  </div>`;
+}
+
+function renderAnalysis() {
+  return `<div class="analysis-box">
+    <div class="analysis-label">✓ Bob's Analysis</div>
+    <div class="analysis-summary">${currentAnalysis.summary||""}</div>
+    ${(currentAnalysis.changes||[]).map(c=>`<div class="analysis-change">→ ${c}</div>`).join("")}
+    <div style="margin-top:10px;"><button class="btn btn-secondary btn-sm" onclick="dismissAnalysis()">Dismiss</button></div>
+  </div>`;
+}
+
+function renderList() {
+  const proj=getPS(); if(!proj) return "";
+  if(activeTab==="tasks") {
+    if(!proj.tasks.length) return `<div class="empty">No tasks yet — use Feed Bob above to add content.</div>`;
+    return [...proj.tasks.filter(t=>t.status!=="done"),...proj.tasks.filter(t=>t.status==="done")].map(t=>{
+      const sc=t.status==="done"?"done-card":t.status==="in-progress"?"in-progress":t.status;
+      const chip=t.status==="open"?`<span class="chip chip-blue">Open</span>`:t.status==="in-progress"?`<span class="chip chip-green">In Progress</span>`:`<span class="chip chip-gray">Done</span>`;
+      return `<div class="item-card ${sc}"><div class="item-body"><div class="item-title${t.status==="done"?" done":""}">${t.text}</div><div class="item-meta-row">${chip}${t.isNew?`<span class="chip chip-new">new</span>`:""}${t.owner?`<span class="chip chip-gray">👤 ${t.owner}</span>`:""}${t.due?`<span class="chip chip-amber">📅 ${t.due}</span>`:""}${t.source?`<span class="item-source">${t.source}</span>`:""}</div></div><select class="status-select" onchange="setTaskStatus('${t.id}',this.value)"><option value="open"${t.status==="open"?" selected":""}>Open</option><option value="in-progress"${t.status==="in-progress"?" selected":""}>In Progress</option><option value="done"${t.status==="done"?" selected":""}>Done</option></select></div>`;
+    }).join("");
+  }
+  if(activeTab==="decisions") {
+    if(!proj.decisions.length) return `<div class="empty">No decisions logged yet.</div>`;
+    return proj.decisions.map(d=>`<div class="item-card decision"><div class="item-body"><div class="item-title">${d.text}</div><div class="item-meta-row"><span class="chip chip-purple">Decision</span>${d.isNew?`<span class="chip chip-new">new</span>`:""}${d.by?`<span class="chip chip-gray">👤 ${d.by}</span>`:""}${d.date?`<span class="chip chip-purple">📅 ${d.date}</span>`:""}${d.source?`<span class="item-source">${d.source}</span>`:""}</div></div></div>`).join("");
+  }
+  if(activeTab==="risks") {
+    if(!proj.risks.length) return `<div class="empty">No risks or blockers identified yet.</div>`;
+    return [...proj.risks.filter(r=>r.severity==="high"),...proj.risks.filter(r=>r.severity==="medium"),...proj.risks.filter(r=>r.severity==="low")].map(r=>{
+      const cc=r.severity==="high"?"chip-red":r.severity==="medium"?"chip-amber":"chip-green";
+      return `<div class="item-card ${r.severity}"><div class="item-body"><div class="item-title">${r.text}</div><div class="item-meta-row"><span class="chip ${cc}">${r.severity.charAt(0).toUpperCase()+r.severity.slice(1)} Risk</span>${r.isNew?`<span class="chip chip-new">new</span>`:""}${r.owner?`<span class="chip chip-gray">👤 ${r.owner}</span>`:""}${r.source?`<span class="item-source">${r.source}</span>`:""}</div></div></div>`;
+    }).join("");
+  }
+  return "";
+}
+
+// ---- INTERACTIONS ----
+function toggleFeed() { showFeed=!showFeed; renderContent(); }
+function setTab(t) { activeTab=t; renderContent(); }
+function setType(t) { activeType=t; renderContent(); }
+function dismissAnalysis() {
+  currentAnalysis=null;
+  const proj=getPS();
+  proj.tasks=proj.tasks.map(t=>({...t,isNew:false}));
+  proj.decisions=proj.decisions.map(d=>({...d,isNew:false}));
+  proj.risks=proj.risks.map(r=>({...r,isNew:false}));
+  saveDB(); renderContent();
+}
+function setTaskStatus(id,status) {
+  const proj=getPS();
+  proj.tasks=proj.tasks.map(t=>t.id===id?{...t,status}:t);
+  saveDB();
+  document.getElementById("item-list").innerHTML=renderList();
+}
+
+async function processFeed() {
+  const ta=document.getElementById("feed-ta");
+  if(!ta||!ta.value.trim()||isProcessing) return;
+  const text=ta.value.trim();
+  const proj=getPS();
+  isProcessing=true;
+  const btn=document.getElementById("process-btn");
+  btn.disabled=true; btn.innerHTML=`<span class="spinner" style="border-top-color:#fff;border-color:rgba(255,255,255,0.3);"></span> Processing...`;
+  document.getElementById("processing-area").innerHTML=`<div class="processing-indicator"><div class="spinner"></div>Bob is reading your ${activeType.toLowerCase()} and extracting action items...</div>`;
+  try {
+    const prompt=`Current project state:\n${JSON.stringify({tasks:proj.tasks,decisions:proj.decisions,risks:proj.risks},null,2)}\n\nNew ${activeType} for project "${proj.name}":\n${text}\n\nReturn updated project state as JSON.`;
+    const result=await callBob(BOB_SYSTEM, prompt);
+    const r=JSON.parse(result);
+    if(r.tasks!==undefined) proj.tasks=r.tasks;
+    if(r.decisions!==undefined) proj.decisions=r.decisions;
+    if(r.risks!==undefined) proj.risks=r.risks;
+    saveDB(); currentAnalysis=r; showFeed=false; renderContent();
+    showToast("Board updated by Bob");
+  } catch(e) {
+    document.getElementById("processing-area").innerHTML=`<div style="color:var(--red);font-size:12px;margin-top:8px;">⚠ ${e.message||"Processing failed. Please try again."}</div>`;
+    btn.disabled=false; btn.innerHTML="Process →";
+  }
+  isProcessing=false;
+}
+
+async function showEOD() {
+  const proj=getPS();
+  if(!proj) { showToast("Select a project first"); return; }
+  document.getElementById("eod-modal").style.display="flex";
+  document.getElementById("eod-body").innerHTML=`<div style="display:flex;align-items:center;gap:10px;color:var(--text3);"><div class="spinner" style="border-top-color:var(--accent);border-color:var(--border2);"></div>Bob is preparing your brief...</div>`;
+  try {
+    const result=await callBob(
+      "You are Bob, a project management AI. Write a clean professional end-of-day project brief. Plain text only, no markdown symbols like ** or ##. Use clear line breaks and sections. Be concise and actionable.",
+      `Project: ${proj.name}\n${proj.desc?"Description: "+proj.desc+"\n":""}\nCurrent state:\n${JSON.stringify({tasks:proj.tasks,decisions:proj.decisions,risks:proj.risks},null,2)}`
+    );
+    document.getElementById("eod-body").textContent=result;
+  } catch(e) {
+    document.getElementById("eod-body").textContent="Could not generate brief. Please check your API key in Settings.";
+  }
+}
+
+function closeModal(id) { document.getElementById(id).style.display="none"; }
+function showToast(msg) {
+  const t=document.getElementById("toast");
+  t.textContent=msg; t.classList.add("show");
+  setTimeout(()=>t.classList.remove("show"),3000);
+}
+
+// ---- BOOT ----
+const existingKey = getKey();
+if(existingKey) {
+  document.getElementById("setup-screen").style.display="none";
+  document.getElementById("app").classList.add("visible");
+  loadDB();
+  if(db.projects.length) activeProject=db.projects[0].id;
+  renderSidebar(); renderContent();
+}
+</script>
+</body>
+</html>
