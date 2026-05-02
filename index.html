@@ -149,6 +149,11 @@
   .toast.show { opacity: 1; transform: translateY(0); }
   .no-project { display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100%; gap: 16px; color: var(--text3); }
   .no-project-icon { font-size: 48px; opacity: 0.3; }
+  .item-actions { display: flex; gap: 4px; flex-shrink: 0; opacity: 0; transition: opacity 0.15s; align-items: center; }
+  .item-card:hover .item-actions { opacity: 1; }
+  .item-action-btn { background: none; border: 1px solid var(--border2); color: var(--text3); border-radius: 4px; width: 26px; height: 26px; cursor: pointer; font-size: 13px; display: flex; align-items: center; justify-content: center; padding: 0; line-height: 1; }
+  .item-action-btn:hover { background: var(--surface2); color: var(--text); }
+  .item-action-btn.danger:hover { background: var(--red-light); color: var(--red); border-color: #fecaca; }
 </style>
 </head>
 <body>
@@ -257,6 +262,21 @@
   </div>
 </div>
 
+<!-- ADD / EDIT ITEM MODAL -->
+<div class="modal-backdrop" id="item-modal" style="display:none;">
+  <div class="modal" style="max-width:460px;">
+    <div class="modal-header">
+      <div class="modal-title" id="item-modal-title">Add Task</div>
+      <button class="modal-close" onclick="closeModal('item-modal')">×</button>
+    </div>
+    <div id="item-modal-body"></div>
+    <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:6px;">
+      <button class="btn btn-secondary btn-sm" onclick="closeModal('item-modal')">Cancel</button>
+      <button class="btn btn-primary btn-sm" onclick="saveItem()">Save</button>
+    </div>
+  </div>
+</div>
+
 <div class="toast" id="toast"></div>
 
 <script>
@@ -312,7 +332,7 @@ async function callBob(systemPrompt, userPrompt) {
   const res = await fetch("https://api.anthropic.com/v1/messages", {
     method: "POST",
     headers: { "Content-Type": "application/json", "x-api-key": key, "anthropic-version": "2023-06-01", "anthropic-dangerous-direct-browser-access": "true" },
-    body: JSON.stringify({ model: "claude-haiku-4-5-20251001", max_tokens: 1000, system: systemPrompt, messages: [{ role: "user", content: userPrompt }] })
+    body: JSON.stringify({ model: "claude-sonnet-4-6", max_tokens: 4000, system: systemPrompt, messages: [{ role: "user", content: userPrompt }] })
   });
   if(!res.ok) throw new Error(`API error: ${res.status}`);
   const data = await res.json();
@@ -395,6 +415,9 @@ function renderContent() {
       ${renderTab("decisions","Decisions",proj.decisions.length,newD)}
       ${renderTab("risks","Risks & Blockers",proj.risks.length,newR)}
     </div>
+    <div style="display:flex;justify-content:flex-end;margin-bottom:10px;">
+      <button class="btn btn-secondary btn-sm" onclick="showAddItem()">+ Add ${activeTab==="tasks"?"Task":activeTab==="decisions"?"Decision":"Risk"}</button>
+    </div>
     <div class="item-list" id="item-list">${renderList()}</div>
     <div style="margin-top:28px;display:flex;justify-content:flex-end;">
       <button class="btn btn-danger" onclick="deleteProject('${proj.id}',event)">Delete Project</button>
@@ -433,18 +456,18 @@ function renderList() {
     return [...proj.tasks.filter(t=>t.status!=="done"),...proj.tasks.filter(t=>t.status==="done")].map(t=>{
       const sc=t.status==="done"?"done-card":t.status==="in-progress"?"in-progress":t.status;
       const chip=t.status==="open"?`<span class="chip chip-blue">Open</span>`:t.status==="in-progress"?`<span class="chip chip-green">In Progress</span>`:`<span class="chip chip-gray">Done</span>`;
-      return `<div class="item-card ${sc}"><div class="item-body"><div class="item-title${t.status==="done"?" done":""}">${t.text}</div><div class="item-meta-row">${chip}${t.isNew?`<span class="chip chip-new">new</span>`:""}${t.owner?`<span class="chip chip-gray">👤 ${t.owner}</span>`:""}${t.due?`<span class="chip chip-amber">📅 ${t.due}</span>`:""}${t.source?`<span class="item-source">${t.source}</span>`:""}</div></div><select class="status-select" onchange="setTaskStatus('${t.id}',this.value)"><option value="open"${t.status==="open"?" selected":""}>Open</option><option value="in-progress"${t.status==="in-progress"?" selected":""}>In Progress</option><option value="done"${t.status==="done"?" selected":""}>Done</option></select></div>`;
+      return `<div class="item-card ${sc}"><div class="item-body"><div class="item-title${t.status==="done"?" done":""}">${t.text}</div><div class="item-meta-row">${chip}${t.isNew?`<span class="chip chip-new">new</span>`:""}${t.owner?`<span class="chip chip-gray">👤 ${t.owner}</span>`:""}${t.due?`<span class="chip chip-amber">📅 ${t.due}</span>`:""}${t.source?`<span class="item-source">${t.source}</span>`:""}</div></div><select class="status-select" onchange="setTaskStatus('${t.id}',this.value)"><option value="open"${t.status==="open"?" selected":""}>Open</option><option value="in-progress"${t.status==="in-progress"?" selected":""}>In Progress</option><option value="done"${t.status==="done"?" selected":""}>Done</option></select><div class="item-actions"><button class="item-action-btn" onclick="showEditItem('tasks','${t.id}')" title="Edit">✏</button><button class="item-action-btn danger" onclick="deleteItem('tasks','${t.id}')" title="Delete">×</button></div></div>`;
     }).join("");
   }
   if(activeTab==="decisions") {
     if(!proj.decisions.length) return `<div class="empty">No decisions logged yet.</div>`;
-    return proj.decisions.map(d=>`<div class="item-card decision"><div class="item-body"><div class="item-title">${d.text}</div><div class="item-meta-row"><span class="chip chip-purple">Decision</span>${d.isNew?`<span class="chip chip-new">new</span>`:""}${d.by?`<span class="chip chip-gray">👤 ${d.by}</span>`:""}${d.date?`<span class="chip chip-purple">📅 ${d.date}</span>`:""}${d.source?`<span class="item-source">${d.source}</span>`:""}</div></div></div>`).join("");
+    return proj.decisions.map(d=>`<div class="item-card decision"><div class="item-body"><div class="item-title">${d.text}</div><div class="item-meta-row"><span class="chip chip-purple">Decision</span>${d.isNew?`<span class="chip chip-new">new</span>`:""}${d.by?`<span class="chip chip-gray">👤 ${d.by}</span>`:""}${d.date?`<span class="chip chip-purple">📅 ${d.date}</span>`:""}${d.source?`<span class="item-source">${d.source}</span>`:""}</div></div><div class="item-actions"><button class="item-action-btn" onclick="showEditItem('decisions','${d.id}')" title="Edit">✏</button><button class="item-action-btn danger" onclick="deleteItem('decisions','${d.id}')" title="Delete">×</button></div></div>`).join("");
   }
   if(activeTab==="risks") {
     if(!proj.risks.length) return `<div class="empty">No risks or blockers identified yet.</div>`;
     return [...proj.risks.filter(r=>r.severity==="high"),...proj.risks.filter(r=>r.severity==="medium"),...proj.risks.filter(r=>r.severity==="low")].map(r=>{
       const cc=r.severity==="high"?"chip-red":r.severity==="medium"?"chip-amber":"chip-green";
-      return `<div class="item-card ${r.severity}"><div class="item-body"><div class="item-title">${r.text}</div><div class="item-meta-row"><span class="chip ${cc}">${r.severity.charAt(0).toUpperCase()+r.severity.slice(1)} Risk</span>${r.isNew?`<span class="chip chip-new">new</span>`:""}${r.owner?`<span class="chip chip-gray">👤 ${r.owner}</span>`:""}${r.source?`<span class="item-source">${r.source}</span>`:""}</div></div></div>`;
+      return `<div class="item-card ${r.severity}"><div class="item-body"><div class="item-title">${r.text}</div><div class="item-meta-row"><span class="chip ${cc}">${r.severity.charAt(0).toUpperCase()+r.severity.slice(1)} Risk</span>${r.isNew?`<span class="chip chip-new">new</span>`:""}${r.owner?`<span class="chip chip-gray">👤 ${r.owner}</span>`:""}${r.source?`<span class="item-source">${r.source}</span>`:""}</div></div><div class="item-actions"><button class="item-action-btn" onclick="showEditItem('risks','${r.id}')" title="Edit">✏</button><button class="item-action-btn danger" onclick="deleteItem('risks','${r.id}')" title="Delete">×</button></div></div>`;
     }).join("");
   }
   return "";
@@ -515,6 +538,109 @@ function showToast(msg) {
   const t=document.getElementById("toast");
   t.textContent=msg; t.classList.add("show");
   setTimeout(()=>t.classList.remove("show"),3000);
+}
+
+// ---- MANUAL CRUD ----
+let itemModalState = { type: null, id: null };
+
+function esc(s) {
+  return s ? String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;") : "";
+}
+
+function showAddItem() {
+  itemModalState = { type: activeTab, id: null };
+  const labels = { tasks:"Add Task", decisions:"Add Decision", risks:"Add Risk / Blocker" };
+  document.getElementById("item-modal-title").textContent = labels[activeTab];
+  document.getElementById("item-modal-body").innerHTML = itemModalForm(activeTab, null);
+  document.getElementById("item-modal").style.display = "flex";
+  setTimeout(()=>document.getElementById("item-text").focus(), 100);
+}
+
+function showEditItem(type, id) {
+  const proj = getPS();
+  const arr = type==="tasks" ? proj.tasks : type==="decisions" ? proj.decisions : proj.risks;
+  const item = arr.find(x=>x.id===id);
+  if(!item) return;
+  itemModalState = { type, id };
+  const labels = { tasks:"Edit Task", decisions:"Edit Decision", risks:"Edit Risk / Blocker" };
+  document.getElementById("item-modal-title").textContent = labels[type];
+  document.getElementById("item-modal-body").innerHTML = itemModalForm(type, item);
+  document.getElementById("item-modal").style.display = "flex";
+  setTimeout(()=>document.getElementById("item-text").focus(), 100);
+}
+
+function itemModalForm(type, item) {
+  if(type==="tasks") return `
+    <div class="form-group"><label class="form-label">Task</label>
+      <textarea class="form-input" id="item-text" rows="3" style="resize:vertical;">${esc(item?.text)}</textarea></div>
+    <div class="form-group"><label class="form-label">Owner (optional)</label>
+      <input class="form-input" id="item-owner" value="${esc(item?.owner)}" placeholder="e.g. Chris" /></div>
+    <div class="form-group"><label class="form-label">Due date (optional)</label>
+      <input class="form-input" id="item-due" value="${esc(item?.due)}" placeholder="e.g. 15 May" /></div>
+    <div class="form-group"><label class="form-label">Status</label>
+      <select class="form-input" id="item-status">
+        <option value="open"${item?.status==="open"?" selected":""}>Open</option>
+        <option value="in-progress"${item?.status==="in-progress"?" selected":""}>In Progress</option>
+        <option value="done"${item?.status==="done"?" selected":""}>Done</option>
+      </select></div>`;
+  if(type==="decisions") return `
+    <div class="form-group"><label class="form-label">Decision</label>
+      <textarea class="form-input" id="item-text" rows="3" style="resize:vertical;">${esc(item?.text)}</textarea></div>
+    <div class="form-group"><label class="form-label">Made by (optional)</label>
+      <input class="form-input" id="item-by" value="${esc(item?.by)}" placeholder="e.g. Chris" /></div>
+    <div class="form-group"><label class="form-label">Date (optional)</label>
+      <input class="form-input" id="item-date" value="${esc(item?.date)}" placeholder="e.g. 2 May 2026" /></div>`;
+  if(type==="risks") return `
+    <div class="form-group"><label class="form-label">Risk / Blocker</label>
+      <textarea class="form-input" id="item-text" rows="3" style="resize:vertical;">${esc(item?.text)}</textarea></div>
+    <div class="form-group"><label class="form-label">Severity</label>
+      <select class="form-input" id="item-severity">
+        <option value="low"${item?.severity==="low"?" selected":""}>Low</option>
+        <option value="medium"${item?.severity==="medium"?" selected":""}>Medium</option>
+        <option value="high"${item?.severity==="high"?" selected":""}>High</option>
+      </select></div>
+    <div class="form-group"><label class="form-label">Owner (optional)</label>
+      <input class="form-input" id="item-owner" value="${esc(item?.owner)}" placeholder="e.g. Chris" /></div>`;
+  return "";
+}
+
+function saveItem() {
+  const { type, id } = itemModalState;
+  const text = document.getElementById("item-text").value.trim();
+  if(!text) { showToast("Please enter some text"); return; }
+  const proj = getPS();
+  if(type==="tasks") {
+    const owner = document.getElementById("item-owner").value.trim() || null;
+    const due = document.getElementById("item-due").value.trim() || null;
+    const status = document.getElementById("item-status").value;
+    if(id) proj.tasks = proj.tasks.map(t=>t.id===id ? {...t,text,owner,due,status} : t);
+    else proj.tasks.push({id:genId(),text,owner,due,status,source:"Manual",isNew:false});
+  } else if(type==="decisions") {
+    const by = document.getElementById("item-by").value.trim() || null;
+    const date = document.getElementById("item-date").value.trim() || null;
+    if(id) proj.decisions = proj.decisions.map(d=>d.id===id ? {...d,text,by,date} : d);
+    else proj.decisions.push({id:genId(),text,by,date,source:"Manual",isNew:false});
+  } else if(type==="risks") {
+    const severity = document.getElementById("item-severity").value;
+    const owner = document.getElementById("item-owner").value.trim() || null;
+    if(id) proj.risks = proj.risks.map(r=>r.id===id ? {...r,text,severity,owner} : r);
+    else proj.risks.push({id:genId(),text,severity,owner,source:"Manual",isNew:false});
+  }
+  saveDB();
+  closeModal("item-modal");
+  renderContent();
+  showToast(id ? "Item updated" : "Item added");
+}
+
+function deleteItem(type, id) {
+  if(!confirm("Delete this item?")) return;
+  const proj = getPS();
+  if(type==="tasks") proj.tasks = proj.tasks.filter(t=>t.id!==id);
+  else if(type==="decisions") proj.decisions = proj.decisions.filter(d=>d.id!==id);
+  else if(type==="risks") proj.risks = proj.risks.filter(r=>r.id!==id);
+  saveDB();
+  renderContent();
+  showToast("Item deleted");
 }
 
 // ---- BOOT ----
