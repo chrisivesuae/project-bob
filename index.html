@@ -310,14 +310,13 @@ RISKS — threats, blockers, concerns, or uncertainties (not yet resolved).
   - medium: material impact if not resolved within days or a few weeks
   - low: worth monitoring but not immediately threatening
 
-MERGE RULES:
-- Compare every new item against existing ones — never create duplicates
-- isNew:true only for items not already in the existing state
-- Preserve ALL existing items exactly; only add new ones or update status if explicitly stated
-- Use the document title or type as the "source" field
+RULES:
+- updates: changes to items ALREADY in the existing state — identify by exact id, one entry per field changed, include oldValue and newValue and a brief reason. Only include if something genuinely changes.
+- tasks/decisions/risks arrays: ONLY brand new items not present in the existing state. Do NOT repeat existing items here.
+- Use the document type as the "source" field for new items.
 
-Return exactly this JSON shape:
-{"summary":"1-2 sentence summary of what was found","tasks":[{"id":"uid","text":"clear action","owner":null,"due":null,"status":"open","source":"source","isNew":true}],"decisions":[{"id":"uid","text":"what was decided","by":null,"date":null,"source":"source","isNew":true}],"risks":[{"id":"uid","text":"risk or blocker","severity":"low|medium|high","owner":null,"source":"source","isNew":true}],"changes":["each change made"]}`;
+Return exactly this JSON shape — no other text:
+{"summary":"1-2 sentence summary of what was found","updates":[{"id":"existing-item-id","field":"status|due|owner|text|severity|by|date","oldValue":"current value or null","newValue":"new value","reason":"brief reason"}],"tasks":[{"id":"uid","text":"clear action","owner":null,"due":null,"status":"open","source":"source","isNew":true}],"decisions":[{"id":"uid","text":"what was decided","by":null,"date":null,"source":"source","isNew":true}],"risks":[{"id":"uid","text":"risk or blocker","severity":"low|medium|high","owner":null,"source":"source","isNew":true}],"changes":["each change made"]}`;
 
 let db = { projects: [] };
 let activeProject = null;
@@ -569,12 +568,18 @@ ${JSON.stringify({tasks:proj.tasks,decisions:proj.decisions,risks:proj.risks},nu
 NEW ${activeType.toUpperCase()} TO ANALYSE:
 ${text}
 
-Extract every task (with owner and due date where stated), decision, and risk from the ${activeType.toLowerCase()} above. Merge with the existing state. Return the complete updated JSON.`;
+Identify updates to existing items (by id) and new items to add. Return JSON with an updates array for changes to existing items, and separate tasks/decisions/risks arrays for new items only.`;
     const result=await callBob(BOB_SYSTEM, prompt);
     const r=JSON.parse(result);
-    if(r.tasks!==undefined) proj.tasks=r.tasks;
-    if(r.decisions!==undefined) proj.decisions=r.decisions;
-    if(r.risks!==undefined) proj.risks=r.risks;
+    // Apply field-level updates to existing items
+    (r.updates||[]).forEach(u=>{
+      const item=proj.tasks.find(x=>x.id===u.id)||proj.decisions.find(x=>x.id===u.id)||proj.risks.find(x=>x.id===u.id);
+      if(item) item[u.field]=u.newValue;
+    });
+    // Append genuinely new items (guard against Bob repeating existing ids)
+    (r.tasks||[]).forEach(t=>{ if(!proj.tasks.find(x=>x.id===t.id)) proj.tasks.push(t); });
+    (r.decisions||[]).forEach(d=>{ if(!proj.decisions.find(x=>x.id===d.id)) proj.decisions.push(d); });
+    (r.risks||[]).forEach(k=>{ if(!proj.risks.find(x=>x.id===k.id)) proj.risks.push(k); });
     saveDB(); currentAnalysis=r; showFeed=false; renderContent();
     showToast("Board updated by Bob");
   } catch(e) {
