@@ -287,10 +287,35 @@
 const SK = "pob-final-v1";
 const KEY_SK = "pob-api-key";
 const INPUT_TYPES = ["Meeting Notes","Email","Letter","Phone Call","Document","Other"];
-const BOB_SYSTEM = `You are Bob, an intelligent project management AI. Analyze input content and update a project's lists.
-Respond ONLY with a valid JSON object (no markdown, no backticks):
-{"summary":"1-2 sentence summary","tasks":[{"id":"uid","text":"task","owner":null,"due":null,"status":"open","source":"source","isNew":true}],"decisions":[{"id":"uid","text":"decision","by":null,"date":null,"source":"source","isNew":true}],"risks":[{"id":"uid","text":"risk","severity":"low|medium|high","owner":null,"source":"source","isNew":true}],"changes":["what changed"]}
-Rules: MERGE with existing items, never duplicate. isNew:true only for brand new items. Preserve ALL existing items. Return ALL items in each array.`;
+const BOB_SYSTEM = `You are Bob, an intelligent project management AI. Read project communications and extract structured information. Return ONLY a valid JSON object — no markdown, no backticks, no explanation.
+
+WHAT COUNTS AS EACH TYPE:
+
+TASKS — action items: something that must be done by someone.
+- Spot them via: action verbs (send, arrange, confirm, review, prepare, chase, book, update, submit, coordinate); phrases like "to be done by", "action:", "[name] to", "[name] will", "we need to", "please can you"
+- Owner: extract the responsible person from patterns like "John to arrange", "AI: Sarah", "@Chris", "assigned to Mike", "Chris will"
+- Due date: extract from "by Friday", "before 15 May", "deadline end of month", "next week", "ASAP", specific dates
+
+DECISIONS — things already agreed or resolved (past tense).
+- Spot them via: "it was agreed", "we decided", "confirmed", "approved", "selected", "the approach will be", "signed off on"
+- Do NOT mark something as a decision if it is still under discussion or pending approval
+- "by" field = who made/approved the decision; "date" field = when it was made
+
+RISKS — threats, blockers, concerns, or uncertainties (not yet resolved).
+- Spot them via: "risk that", "concern about", "issue with", "blocked by", "waiting on", "cannot proceed until", "unclear whether", "TBC", "subject to", "outstanding", "overdue"
+- Severity:
+  - high: threatens delivery timeline, safety, legal compliance, or significant cost
+  - medium: material impact if not resolved within days or a few weeks
+  - low: worth monitoring but not immediately threatening
+
+MERGE RULES:
+- Compare every new item against existing ones — never create duplicates
+- isNew:true only for items not already in the existing state
+- Preserve ALL existing items exactly; only add new ones or update status if explicitly stated
+- Use the document title or type as the "source" field
+
+Return exactly this JSON shape:
+{"summary":"1-2 sentence summary of what was found","tasks":[{"id":"uid","text":"clear action","owner":null,"due":null,"status":"open","source":"source","isNew":true}],"decisions":[{"id":"uid","text":"what was decided","by":null,"date":null,"source":"source","isNew":true}],"risks":[{"id":"uid","text":"risk or blocker","severity":"low|medium|high","owner":null,"source":"source","isNew":true}],"changes":["each change made"]}`;
 
 let db = { projects: [] };
 let activeProject = null;
@@ -514,7 +539,16 @@ async function processFeed() {
   btn.disabled=true; btn.innerHTML=`<span class="spinner" style="border-top-color:#fff;border-color:rgba(255,255,255,0.3);"></span> Processing...`;
   document.getElementById("processing-area").innerHTML=`<div class="processing-indicator"><div class="spinner"></div>Bob is reading your ${activeType.toLowerCase()} and extracting action items...</div>`;
   try {
-    const prompt=`Current project state:\n${JSON.stringify({tasks:proj.tasks,decisions:proj.decisions,risks:proj.risks},null,2)}\n\nNew ${activeType} for project "${proj.name}":\n${text}\n\nReturn updated project state as JSON.`;
+    const prompt=`Project: "${proj.name}"${proj.desc?" — "+proj.desc:""}
+Input type: ${activeType}
+
+EXISTING PROJECT STATE (do not duplicate any of these):
+${JSON.stringify({tasks:proj.tasks,decisions:proj.decisions,risks:proj.risks},null,2)}
+
+NEW ${activeType.toUpperCase()} TO ANALYSE:
+${text}
+
+Extract every task (with owner and due date where stated), decision, and risk from the ${activeType.toLowerCase()} above. Merge with the existing state. Return the complete updated JSON.`;
     const result=await callBob(BOB_SYSTEM, prompt);
     const r=JSON.parse(result);
     if(r.tasks!==undefined) proj.tasks=r.tasks;
@@ -536,7 +570,7 @@ async function showEOD() {
   document.getElementById("eod-body").innerHTML=`<div style="display:flex;align-items:center;gap:10px;color:var(--text3);"><div class="spinner" style="border-top-color:var(--accent);border-color:var(--border2);"></div>Bob is preparing your brief...</div>`;
   try {
     const result=await callBob(
-      "You are Bob, a project management AI. Write a clean professional end-of-day project brief. Plain text only, no markdown symbols like ** or ##. Use clear line breaks and sections. Be concise and actionable.",
+      "You are Bob, a project management AI. Write a professional end-of-day project brief in plain text. No markdown symbols (**, ##, *, --). Use these sections separated by a blank line: PROJECT STATUS (1-2 sentence overview of overall health), KEY ACTIONS (numbered list of open tasks — include owner and due date where known, flag overdue items), DECISIONS MADE (brief list of logged decisions), RISKS & BLOCKERS (high risks first, each with a suggested mitigation), NEXT STEPS (top 3 priorities for tomorrow). Be specific and use names where available.",
       `Project: ${proj.name}\n${proj.desc?"Description: "+proj.desc+"\n":""}\nCurrent state:\n${JSON.stringify({tasks:proj.tasks,decisions:proj.decisions,risks:proj.risks},null,2)}`
     );
     document.getElementById("eod-body").textContent=result;
