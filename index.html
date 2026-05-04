@@ -154,6 +154,10 @@
   .item-action-btn { background: none; border: 1px solid var(--border2); color: var(--text3); border-radius: 4px; width: 26px; height: 26px; cursor: pointer; font-size: 13px; display: flex; align-items: center; justify-content: center; padding: 0; line-height: 1; }
   .item-action-btn:hover { background: var(--surface2); color: var(--text); }
   .item-action-btn.danger:hover { background: var(--red-light); color: var(--red); border-color: #fecaca; }
+  .drop-zone { border: 2px dashed var(--border2); border-radius: var(--radius-sm); padding: 18px 16px; text-align: center; color: var(--text3); font-size: 12px; cursor: pointer; transition: all 0.15s; margin-bottom: 10px; background: var(--surface2); }
+  .drop-zone:hover { border-color: var(--accent); color: var(--accent); background: var(--accent-light); }
+  .drop-zone.drag-over { border-color: var(--accent); background: var(--accent-light); color: var(--accent); }
+  .drop-zone-icon { font-size: 20px; margin-bottom: 4px; }
 </style>
 </head>
 <body>
@@ -400,6 +404,8 @@ function renderContent() {
       </div>
       <div style="display:flex;gap:8px;flex-wrap:wrap;">
         <button class="btn btn-secondary btn-sm" onclick="toggleFeed()">${showFeed?"Hide Feed":"+ Feed Bob"}</button>
+        <button class="btn btn-secondary btn-sm" onclick="exportClipboard()">Copy All</button>
+        <button class="btn btn-secondary btn-sm" onclick="exportCSV()">Export CSV</button>
         <button class="btn btn-primary btn-sm" onclick="showEOD()">End-of-Day Brief</button>
       </div>
     </div>
@@ -432,7 +438,13 @@ function renderFeedPanel() {
   return `<div class="feed-panel">
     <div class="feed-label">Feed Bob · Choose input type</div>
     <div class="type-pills">${INPUT_TYPES.map(t=>`<button class="type-pill${activeType===t?" active":""}" onclick="setType('${t}')">${t}</button>`).join("")}</div>
-    <textarea class="feed-ta" id="feed-ta" placeholder="Paste your ${activeType.toLowerCase()} here — Bob will automatically extract tasks, decisions and risks..."></textarea>
+    <div class="drop-zone" id="drop-zone" onclick="document.getElementById('file-input').click()" ondragover="handleDragOver(event)" ondragleave="handleDragLeave(event)" ondrop="handleDrop(event)">
+      <div class="drop-zone-icon">📎</div>
+      <div>Drop a file here or <span style="color:var(--accent);text-decoration:underline;">browse</span></div>
+      <div style="margin-top:3px;font-size:11px;">.txt · .eml · .md · .csv</div>
+    </div>
+    <input type="file" id="file-input" accept=".txt,.eml,.md,.csv" style="display:none;" onchange="handleFileInput(event)" />
+    <textarea class="feed-ta" id="feed-ta" placeholder="Paste your ${activeType.toLowerCase()} here, or drop a file above — Bob will automatically extract tasks, decisions and risks..."></textarea>
     <div style="display:flex;justify-content:flex-end;margin-top:10px;">
       <button class="btn btn-primary" id="process-btn" onclick="processFeed()">Process →</button>
     </div>
@@ -641,6 +653,97 @@ function deleteItem(type, id) {
   saveDB();
   renderContent();
   showToast("Item deleted");
+}
+
+// ---- FILE DROP ----
+const ALLOWED_EXTS = ["txt","eml","md","csv"];
+
+function handleDragOver(e) {
+  e.preventDefault();
+  document.getElementById("drop-zone")?.classList.add("drag-over");
+}
+function handleDragLeave(e) {
+  document.getElementById("drop-zone")?.classList.remove("drag-over");
+}
+function handleDrop(e) {
+  e.preventDefault();
+  document.getElementById("drop-zone")?.classList.remove("drag-over");
+  const file = e.dataTransfer.files[0];
+  if(file) readDroppedFile(file);
+}
+function handleFileInput(e) {
+  const file = e.target.files[0];
+  if(file) readDroppedFile(file);
+  e.target.value = "";
+}
+function readDroppedFile(file) {
+  const ext = file.name.split(".").pop().toLowerCase();
+  if(!ALLOWED_EXTS.includes(ext)) { showToast("Unsupported file — use .txt, .eml, .md or .csv"); return; }
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    const ta = document.getElementById("feed-ta");
+    if(ta) { ta.value = e.target.result; ta.focus(); showToast(`Loaded: ${file.name}`); }
+  };
+  reader.onerror = () => showToast("Could not read file");
+  reader.readAsText(file);
+}
+
+// ---- EXPORT ----
+function exportClipboard() {
+  const proj = getPS();
+  if(!proj) return;
+  const lines = [proj.name];
+  if(proj.desc) lines.push(proj.desc);
+
+  lines.push("", "TASKS", "─".repeat(40));
+  if(!proj.tasks.length) { lines.push("No tasks."); }
+  else {
+    [...proj.tasks.filter(t=>t.status!=="done"), ...proj.tasks.filter(t=>t.status==="done")].forEach(t => {
+      let line = (t.status==="done" ? "[done] " : t.status==="in-progress" ? "[in progress] " : "[ ] ") + t.text;
+      if(t.owner) line += `  [${t.owner}]`;
+      if(t.due) line += `  due: ${t.due}`;
+      lines.push(line);
+    });
+  }
+
+  lines.push("", "DECISIONS", "─".repeat(40));
+  if(!proj.decisions.length) { lines.push("No decisions."); }
+  else proj.decisions.forEach(d => {
+    let line = "• " + d.text;
+    if(d.by) line += `  [${d.by}]`;
+    if(d.date) line += `  (${d.date})`;
+    lines.push(line);
+  });
+
+  lines.push("", "RISKS & BLOCKERS", "─".repeat(40));
+  if(!proj.risks.length) { lines.push("No risks."); }
+  else [...proj.risks.filter(r=>r.severity==="high"), ...proj.risks.filter(r=>r.severity==="medium"), ...proj.risks.filter(r=>r.severity==="low")].forEach(r => {
+    let line = `[${r.severity.toUpperCase()}] ${r.text}`;
+    if(r.owner) line += `  [${r.owner}]`;
+    lines.push(line);
+  });
+
+  navigator.clipboard.writeText(lines.join("\n"))
+    .then(() => showToast("Copied to clipboard"))
+    .catch(() => showToast("Copy failed — try again"));
+}
+
+function exportCSV() {
+  const proj = getPS();
+  if(!proj) return;
+  const rows = [["Type","Text","Status / Severity","Owner / By","Due / Date","Source"]];
+  proj.tasks.forEach(t => rows.push(["Task", t.text, t.status, t.owner||"", t.due||"", t.source||""]));
+  proj.decisions.forEach(d => rows.push(["Decision", d.text, "", d.by||"", d.date||"", d.source||""]));
+  proj.risks.forEach(r => rows.push(["Risk", r.text, r.severity, r.owner||"", "", r.source||""]));
+  const csv = rows.map(r => r.map(cell => `"${String(cell).replace(/"/g,'""')}"`).join(",")).join("\n");
+  const blob = new Blob([csv], {type:"text/csv"});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `${proj.name.replace(/[^a-z0-9]/gi,"_")}_export.csv`;
+  a.click();
+  URL.revokeObjectURL(url);
+  showToast("CSV downloaded");
 }
 
 // ---- BOOT ----
