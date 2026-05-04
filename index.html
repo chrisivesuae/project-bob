@@ -154,6 +154,8 @@
   .item-action-btn { background: none; border: 1px solid var(--border2); color: var(--text3); border-radius: 4px; width: 26px; height: 26px; cursor: pointer; font-size: 13px; display: flex; align-items: center; justify-content: center; padding: 0; line-height: 1; }
   .item-action-btn:hover { background: var(--surface2); color: var(--text); }
   .item-action-btn.danger:hover { background: var(--red-light); color: var(--red); border-color: #fecaca; }
+  .notes-ta { width: 100%; min-height: 420px; padding: 14px 16px; border: 1px solid var(--border2); border-radius: var(--radius); font-size: 14px; color: var(--text); background: var(--surface); resize: vertical; outline: none; line-height: 1.75; font-family: 'DM Sans', sans-serif; transition: border-color 0.15s; box-shadow: var(--shadow); }
+  .notes-ta:focus { border-color: var(--accent); background: var(--surface); }
   .drop-zone { border: 2px dashed var(--border2); border-radius: var(--radius-sm); padding: 18px 16px; text-align: center; color: var(--text3); font-size: 12px; cursor: pointer; transition: all 0.15s; margin-bottom: 10px; background: var(--surface2); }
   .drop-zone:hover { border-color: var(--accent); color: var(--accent); background: var(--accent-light); }
   .drop-zone.drag-over { border-color: var(--accent); background: var(--accent-light); color: var(--accent); }
@@ -379,7 +381,7 @@ function showNewProject() {
 function addProject() {
   const name = document.getElementById("new-project-name").value.trim();
   if(!name) return;
-  const proj = { id:genId(), name, desc:document.getElementById("new-project-desc").value.trim(), tasks:[], decisions:[], risks:[], created:new Date().toISOString() };
+  const proj = { id:genId(), name, desc:document.getElementById("new-project-desc").value.trim(), tasks:[], decisions:[], risks:[], notes:"", created:new Date().toISOString() };
   db.projects.push(proj); saveDB();
   closeModal("new-project-modal");
   activeProject=proj.id; renderSidebar(); renderContent();
@@ -445,11 +447,17 @@ function renderContent() {
       ${renderTab("tasks","Tasks",openT,newT)}
       ${renderTab("decisions","Decisions",proj.decisions.length,newD)}
       ${renderTab("risks","Risks & Blockers",proj.risks.length,newR)}
+      ${renderTab("notes","Notes",0,0)}
     </div>
+    ${activeTab==="notes"?`
+    <textarea class="notes-ta" id="notes-ta" placeholder="Type your project notes here..." oninput="onNotesInput()">${esc(proj.notes||"")}</textarea>
+    <div style="display:flex;justify-content:flex-end;margin-top:8px;">
+      <span id="notes-saved" style="font-size:11px;color:var(--green);opacity:0;transition:opacity 0.4s;">Saved</span>
+    </div>`:`
     <div style="display:flex;justify-content:flex-end;margin-bottom:10px;">
       <button class="btn btn-secondary btn-sm" onclick="showAddItem()">+ Add ${activeTab==="tasks"?"Task":activeTab==="decisions"?"Decision":"Risk"}</button>
     </div>
-    <div class="item-list" id="item-list">${renderList()}</div>
+    <div class="item-list" id="item-list">${renderList()}</div>`}
     <div style="margin-top:28px;display:flex;justify-content:flex-end;">
       <button class="btn btn-danger" onclick="deleteProject('${proj.id}',event)">Delete Project</button>
     </div>`;
@@ -514,6 +522,19 @@ function renderList() {
 function toggleFeed() { showFeed=!showFeed; renderContent(); }
 function setTab(t) { activeTab=t; renderContent(); }
 function setType(t) { activeType=t; renderContent(); }
+
+let _notesSaveTimer = null;
+function onNotesInput() {
+  const proj = getPS(); if(!proj) return;
+  proj.notes = document.getElementById("notes-ta").value;
+  saveDB();
+  const ind = document.getElementById("notes-saved");
+  if(ind) {
+    ind.style.opacity = "1";
+    clearTimeout(_notesSaveTimer);
+    _notesSaveTimer = setTimeout(() => { ind.style.opacity = "0"; }, 1500);
+  }
+}
 function dismissAnalysis() {
   currentAnalysis=null;
   const proj=getPS();
