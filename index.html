@@ -154,6 +154,21 @@
   .item-action-btn { background: none; border: 1px solid var(--border2); color: var(--text3); border-radius: 4px; width: 26px; height: 26px; cursor: pointer; font-size: 13px; display: flex; align-items: center; justify-content: center; padding: 0; line-height: 1; }
   .item-action-btn:hover { background: var(--surface2); color: var(--text); }
   .item-action-btn.danger:hover { background: var(--red-light); color: var(--red); border-color: #fecaca; }
+  .review-section-label { font-size: 11px; font-weight: 600; color: var(--text3); letter-spacing: 0.07em; text-transform: uppercase; margin: 16px 0 8px; }
+  .review-section-label:first-child { margin-top: 0; }
+  .review-item { background: var(--surface2); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 11px 14px; margin-bottom: 7px; transition: opacity 0.15s; }
+  .review-item.rejected { opacity: 0.35; }
+  .review-item-title { font-size: 13px; color: var(--text); line-height: 1.4; margin-bottom: 5px; }
+  .review-item-meta { font-size: 11px; color: var(--text3); margin-bottom: 7px; }
+  .review-item-meta span { margin-right: 10px; }
+  .review-change { font-size: 12px; color: var(--text2); margin-bottom: 3px; }
+  .review-change-from { text-decoration: line-through; color: var(--text3); }
+  .review-change-to { color: var(--green); font-weight: 500; }
+  .review-change-reason { font-size: 11px; color: var(--text3); font-style: italic; margin-top: 3px; }
+  .review-actions { display: flex; gap: 6px; margin-top: 8px; }
+  .review-btn { font-size: 11px; padding: 3px 11px; border-radius: var(--radius-sm); border: 1px solid var(--border2); background: transparent; color: var(--text2); cursor: pointer; font-family: 'DM Sans', sans-serif; transition: all 0.15s; }
+  .review-btn.active-accept { background: var(--green-light); border-color: var(--green-border); color: var(--green); font-weight: 600; }
+  .review-btn.active-reject { background: var(--red-light); border-color: #fecaca; color: var(--red); font-weight: 600; }
   .notes-ta { width: 100%; min-height: 420px; padding: 14px 16px; border: 1px solid var(--border2); border-radius: var(--radius); font-size: 14px; color: var(--text); background: var(--surface); resize: vertical; outline: none; line-height: 1.75; font-family: 'DM Sans', sans-serif; transition: border-color 0.15s; box-shadow: var(--shadow); }
   .notes-ta:focus { border-color: var(--accent); background: var(--surface); }
   .drop-zone { border: 2px dashed var(--border2); border-radius: var(--radius-sm); padding: 18px 16px; text-align: center; color: var(--text3); font-size: 12px; cursor: pointer; transition: all 0.15s; margin-bottom: 10px; background: var(--surface2); }
@@ -279,6 +294,23 @@
     <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:6px;">
       <button class="btn btn-secondary btn-sm" onclick="closeModal('item-modal')">Cancel</button>
       <button class="btn btn-primary btn-sm" onclick="saveItem()">Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- REVIEW MODAL -->
+<div class="modal-backdrop" id="review-modal" style="display:none;">
+  <div class="modal" style="max-width:580px;">
+    <div class="modal-header">
+      <div class="modal-title">Review Bob's Suggestions</div>
+      <button class="modal-close" onclick="cancelReview()">×</button>
+    </div>
+    <div id="review-summary" style="font-size:13px;color:var(--text2);line-height:1.5;margin-bottom:14px;display:none;"></div>
+    <div id="review-body" style="max-height:55vh;overflow-y:auto;"></div>
+    <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:16px;padding-top:14px;border-top:1px solid var(--border);">
+      <button class="btn btn-secondary btn-sm" onclick="cancelReview()">Cancel</button>
+      <button class="btn btn-secondary btn-sm" onclick="confirmSelected()">Confirm Selected</button>
+      <button class="btn btn-primary btn-sm" onclick="confirmAll()">Confirm All</button>
     </div>
   </div>
 </div>
@@ -571,17 +603,9 @@ ${text}
 Identify updates to existing items (by id) and new items to add. Return JSON with an updates array for changes to existing items, and separate tasks/decisions/risks arrays for new items only.`;
     const result=await callBob(BOB_SYSTEM, prompt);
     const r=JSON.parse(result);
-    // Apply field-level updates to existing items
-    (r.updates||[]).forEach(u=>{
-      const item=proj.tasks.find(x=>x.id===u.id)||proj.decisions.find(x=>x.id===u.id)||proj.risks.find(x=>x.id===u.id);
-      if(item) item[u.field]=u.newValue;
-    });
-    // Append genuinely new items (guard against Bob repeating existing ids)
-    (r.tasks||[]).forEach(t=>{ if(!proj.tasks.find(x=>x.id===t.id)) proj.tasks.push(t); });
-    (r.decisions||[]).forEach(d=>{ if(!proj.decisions.find(x=>x.id===d.id)) proj.decisions.push(d); });
-    (r.risks||[]).forEach(k=>{ if(!proj.risks.find(x=>x.id===k.id)) proj.risks.push(k); });
-    saveDB(); currentAnalysis=r; showFeed=false; renderContent();
-    showToast("Board updated by Bob");
+    btn.disabled=false; btn.innerHTML="Process →";
+    document.getElementById("processing-area").innerHTML="";
+    openReviewModal(r);
   } catch(e) {
     document.getElementById("processing-area").innerHTML=`<div style="color:var(--red);font-size:12px;margin-top:8px;">⚠ ${e.message||"Processing failed. Please try again."}</div>`;
     btn.disabled=false; btn.innerHTML="Process →";
@@ -805,6 +829,142 @@ function exportCSV() {
   URL.revokeObjectURL(url);
   showToast("CSV downloaded");
 }
+
+// ---- REVIEW MODAL ----
+let pendingReview = null;
+let reviewAccepted = {};
+
+function openReviewModal(r) {
+  pendingReview = r;
+  reviewAccepted = {};
+  // Default all items to accepted
+  (r.updates||[]).forEach((_,i) => reviewAccepted[`u${i}`] = true);
+  (r.tasks||[]).forEach((_,i) => reviewAccepted[`t${i}`] = true);
+  (r.decisions||[]).forEach((_,i) => reviewAccepted[`d${i}`] = true);
+  (r.risks||[]).forEach((_,i) => reviewAccepted[`k${i}`] = true);
+
+  const sumEl = document.getElementById("review-summary");
+  if(r.summary) { sumEl.textContent = r.summary; sumEl.style.display = "block"; }
+  else { sumEl.style.display = "none"; }
+
+  renderReviewBody();
+  document.getElementById("review-modal").style.display = "flex";
+}
+
+function renderReviewBody() {
+  const r = pendingReview;
+  const proj = getPS();
+  let html = "";
+
+  const updates = r.updates||[];
+  const tasks = r.tasks||[];
+  const decisions = r.decisions||[];
+  const risks = r.risks||[];
+
+  if(updates.length) {
+    html += `<div class="review-section-label">Proposed Updates (${updates.length})</div>`;
+    updates.forEach((u,i) => {
+      const key = `u${i}`;
+      const acc = reviewAccepted[key];
+      // Find the existing item to show its current text
+      const existing = proj.tasks.find(x=>x.id===u.id)||proj.decisions.find(x=>x.id===u.id)||proj.risks.find(x=>x.id===u.id);
+      const label = existing ? esc(existing.text) : `(id: ${u.id})`;
+      html += `<div class="review-item${acc?"":" rejected"}">
+        <div class="review-item-title">${label}</div>
+        <div class="review-change">
+          <span style="font-family:'DM Mono',monospace;font-size:11px;color:var(--text3);margin-right:6px;">${esc(u.field)}</span>
+          <span class="review-change-from">${esc(String(u.oldValue??'—'))}</span>
+          <span style="margin:0 5px;color:var(--text3);">→</span>
+          <span class="review-change-to">${esc(String(u.newValue??'—'))}</span>
+        </div>
+        ${u.reason?`<div class="review-change-reason">${esc(u.reason)}</div>`:""}
+        <div class="review-actions">
+          <button class="review-btn${acc?" active-accept":""}" onclick="toggleReview('${key}',true)">Accept</button>
+          <button class="review-btn${!acc?" active-reject":""}" onclick="toggleReview('${key}',false)">Reject</button>
+        </div>
+      </div>`;
+    });
+  }
+
+  const newItems = [
+    ...tasks.map((t,i)=>({item:t,key:`t${i}`,typeLabel:"Task",chipClass:"chip-blue"})),
+    ...decisions.map((d,i)=>({item:d,key:`d${i}`,typeLabel:"Decision",chipClass:"chip-purple"})),
+    ...risks.map((k,i)=>({item:k,key:`k${i}`,typeLabel:"Risk",chipClass:k.severity==="high"?"chip-red":k.severity==="medium"?"chip-amber":"chip-green"}))
+  ];
+
+  if(newItems.length) {
+    html += `<div class="review-section-label">New Items (${newItems.length})</div>`;
+    newItems.forEach(({item,key,typeLabel,chipClass}) => {
+      const acc = reviewAccepted[key];
+      let meta = "";
+      if(item.owner) meta += `<span>👤 ${esc(item.owner)}</span>`;
+      if(item.due)   meta += `<span>📅 ${esc(item.due)}</span>`;
+      if(item.by)    meta += `<span>👤 ${esc(item.by)}</span>`;
+      if(item.date)  meta += `<span>📅 ${esc(item.date)}</span>`;
+      if(item.severity) meta += `<span>${esc(item.severity)} risk</span>`;
+      html += `<div class="review-item${acc?"":" rejected"}">
+        <div style="display:flex;align-items:center;gap:7px;margin-bottom:4px;">
+          <span class="chip ${chipClass}">${typeLabel}</span>
+          <span class="review-item-title" style="margin:0;">${esc(item.text)}</span>
+        </div>
+        ${meta?`<div class="review-item-meta">${meta}</div>`:""}
+        <div class="review-actions">
+          <button class="review-btn${acc?" active-accept":""}" onclick="toggleReview('${key}',true)">Accept</button>
+          <button class="review-btn${!acc?" active-reject":""}" onclick="toggleReview('${key}',false)">Reject</button>
+        </div>
+      </div>`;
+    });
+  }
+
+  if(!updates.length && !newItems.length) {
+    html = `<div class="empty">Bob found nothing new — the project is already up to date.</div>`;
+  }
+
+  document.getElementById("review-body").innerHTML = html;
+}
+
+function toggleReview(key, accept) {
+  reviewAccepted[key] = accept;
+  renderReviewBody();
+}
+
+function applyReview(acceptAll) {
+  if(acceptAll) Object.keys(reviewAccepted).forEach(k => reviewAccepted[k] = true);
+  const r = pendingReview;
+  const proj = getPS();
+  let count = 0;
+
+  (r.updates||[]).forEach((u,i) => {
+    if(!reviewAccepted[`u${i}`]) return;
+    const item = proj.tasks.find(x=>x.id===u.id)||proj.decisions.find(x=>x.id===u.id)||proj.risks.find(x=>x.id===u.id);
+    if(item) { item[u.field]=u.newValue; count++; }
+  });
+  (r.tasks||[]).forEach((t,i) => {
+    if(!reviewAccepted[`t${i}`]) return;
+    if(!proj.tasks.find(x=>x.id===t.id)) { proj.tasks.push(t); count++; }
+  });
+  (r.decisions||[]).forEach((d,i) => {
+    if(!reviewAccepted[`d${i}`]) return;
+    if(!proj.decisions.find(x=>x.id===d.id)) { proj.decisions.push(d); count++; }
+  });
+  (r.risks||[]).forEach((k,i) => {
+    if(!reviewAccepted[`k${i}`]) return;
+    if(!proj.risks.find(x=>x.id===k.id)) { proj.risks.push(k); count++; }
+  });
+
+  saveDB();
+  currentAnalysis = r;
+  showFeed = false;
+  pendingReview = null;
+  reviewAccepted = {};
+  closeModal("review-modal");
+  renderContent();
+  showToast(`${count} change${count!==1?"s":""} applied`);
+}
+
+function confirmSelected() { applyReview(false); }
+function confirmAll()      { applyReview(true); }
+function cancelReview()    { pendingReview=null; reviewAccepted={}; closeModal("review-modal"); }
 
 // ---- BOOT ----
 const existingKey = getKey();
