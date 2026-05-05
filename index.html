@@ -206,7 +206,7 @@
       <div class="bob-logo">B</div>
       <div>
         <div class="header-title">Project Bob</div>
-        <div class="header-sub">AI Project Intelligence · Warwick Bailey Associates</div>
+        <div class="header-sub">AI Project Intelligence · Warwick Bailey Associates · v1.1.0</div>
       </div>
     </div>
     <div class="header-right">
@@ -326,6 +326,7 @@
 <div class="toast" id="toast"></div>
 
 <script>
+const APP_VERSION = "1.1.0";
 const SK = "pob-final-v1";
 const KEY_SK = "pob-api-key";
 const INPUT_TYPES = ["Meeting Notes","Email","Letter","Phone Call","Document","Other"];
@@ -570,8 +571,13 @@ function renderList() {
     if(!proj.tasks.length) return `<div class="empty">No tasks yet — use Feed Bob above to add content.</div>`;
     return [...proj.tasks.filter(t=>t.status!=="done"),...proj.tasks.filter(t=>t.status==="done")].map(t=>{
       const sc=t.status==="done"?"done-card":t.status==="in-progress"?"in-progress":t.status;
-      const chip=t.status==="open"?`<span class="chip chip-blue">Open</span>`:t.status==="in-progress"?`<span class="chip chip-green">In Progress</span>`:`<span class="chip chip-gray">Done</span>`;
-      return `<div class="item-card ${sc}"><div class="item-body"><div class="item-title${t.status==="done"?" done":""}">${t.text}</div><div class="item-meta-row">${chip}${t.isNew?`<span class="chip chip-new">new</span>`:""}${t.owner?`<span class="chip chip-gray">👤 ${t.owner}</span>`:""}${t.due?`<span class="chip chip-amber">📅 ${t.due}</span>`:""}${t.source?`<span class="item-source">${t.source}</span>`:""}</div></div><select class="status-select" onchange="setTaskStatus('${t.id}',this.value)"><option value="open"${t.status==="open"?" selected":""}>Open</option><option value="in-progress"${t.status==="in-progress"?" selected":""}>In Progress</option><option value="done"${t.status==="done"?" selected":""}>Done</option></select><div class="item-actions"><button class="item-action-btn" onclick="showEditItem('tasks','${t.id}')" title="Edit">✏</button><button class="item-action-btn danger" onclick="deleteItem('tasks','${t.id}')" title="Delete">×</button></div></div>`;
+      const statusChip=t.status==="open"?`<span class="chip chip-blue">Open</span>`:t.status==="in-progress"?`<span class="chip chip-green">In Progress</span>`:`<span class="chip chip-gray">Done</span>`;
+      const pc=t.priority==="critical"?"chip-red":t.priority==="high"?"chip-amber":t.priority==="low"?"chip-gray":"chip-blue";
+      const priorityLabel=t.priority?t.priority.charAt(0).toUpperCase()+t.priority.slice(1):"Medium";
+      const priorityChip=`<span class="chip ${pc}">${priorityLabel}</span>`;
+      const closedNote=t.status==="done"&&t.closedReason?`<div style="font-size:12px;color:var(--text3);font-style:italic;margin-top:3px;">${esc(t.closedReason)}</div>`:"";
+      const historyHtml=t.updates&&t.updates.length?`<details style="margin-top:8px;"><summary style="font-size:11px;color:var(--text3);cursor:pointer;">History</summary><div style="margin-top:5px;border-top:1px solid var(--border);padding-top:5px;">${t.updates.map(u=>{const entry=typeof u==="string"?u:(u.text||u.note||"");const dateStr=typeof u==="object"&&u.date?`<span style="color:var(--text3);font-family:'DM Mono',monospace;margin-right:6px;">${esc(u.date)}</span>`:"";return `<div style="font-size:11px;color:var(--text2);padding:3px 0;border-bottom:1px solid var(--border);">${dateStr}${esc(entry)}</div>`;}).join("")}</div></details>`:"";
+      return `<div class="item-card ${sc}"><div class="item-body"><div class="item-title${t.status==="done"?" done":""}">${t.text}</div>${closedNote}<div class="item-meta-row">${priorityChip}${statusChip}${t.isNew?`<span class="chip chip-new">new</span>`:""}${t.owner?`<span class="chip chip-gray">👤 ${t.owner}</span>`:""}${t.due?`<span class="chip chip-amber">📅 ${t.due}</span>`:""}${t.source?`<span class="item-source">${t.source}</span>`:""}</div>${historyHtml}</div><select class="status-select" onchange="setTaskStatus('${t.id}',this.value)"><option value="open"${t.status==="open"?" selected":""}>Open</option><option value="in-progress"${t.status==="in-progress"?" selected":""}>In Progress</option><option value="done"${t.status==="done"?" selected":""}>Done</option></select><div class="item-actions"><button class="item-action-btn" onclick="showEditItem('tasks','${t.id}')" title="Edit">✏</button><button class="item-action-btn danger" onclick="deleteItem('tasks','${t.id}')" title="Delete">×</button></div></div>`;
     }).join("");
   }
   if(activeTab==="decisions") {
@@ -582,7 +588,11 @@ function renderList() {
     if(!proj.risks.length) return `<div class="empty">No risks or blockers identified yet.</div>`;
     return [...proj.risks.filter(r=>r.severity==="high"),...proj.risks.filter(r=>r.severity==="medium"),...proj.risks.filter(r=>r.severity==="low")].map(r=>{
       const cc=r.severity==="high"?"chip-red":r.severity==="medium"?"chip-amber":"chip-green";
-      return `<div class="item-card ${r.severity}"><div class="item-body"><div class="item-title">${r.text}</div><div class="item-meta-row"><span class="chip ${cc}">${r.severity.charAt(0).toUpperCase()+r.severity.slice(1)} Risk</span>${r.isNew?`<span class="chip chip-new">new</span>`:""}${r.owner?`<span class="chip chip-gray">👤 ${r.owner}</span>`:""}${r.source?`<span class="item-source">${r.source}</span>`:""}</div></div><div class="item-actions"><button class="item-action-btn" onclick="showEditItem('risks','${r.id}')" title="Edit">✏</button><button class="item-action-btn danger" onclick="deleteItem('risks','${r.id}')" title="Delete">×</button></div></div>`;
+      const sc=r.status==="resolved"?"chip-green":r.status==="being-mitigated"?"chip-amber":"chip-gray";
+      const statusLabel=r.status==="resolved"?"Resolved":r.status==="being-mitigated"?"Being Mitigated":"Open";
+      const mitigationNote=r.mitigation?`<div style="font-size:12px;color:var(--text3);font-style:italic;margin-top:4px;">🛡 Mitigation: ${esc(r.mitigation)}</div>`:"";
+      const historyHtml=r.updates&&r.updates.length?`<details style="margin-top:8px;"><summary style="font-size:11px;color:var(--text3);cursor:pointer;">History</summary><div style="margin-top:5px;border-top:1px solid var(--border);padding-top:5px;">${r.updates.map(u=>{const entry=typeof u==="string"?u:(u.text||u.note||"");const dateStr=typeof u==="object"&&u.date?`<span style="color:var(--text3);font-family:'DM Mono',monospace;margin-right:6px;">${esc(u.date)}</span>`:"";return `<div style="font-size:11px;color:var(--text2);padding:3px 0;border-bottom:1px solid var(--border);">${dateStr}${esc(entry)}</div>`;}).join("")}</div></details>`:"";
+      return `<div class="item-card ${r.severity}"><div class="item-body"><div class="item-title">${r.text}</div>${mitigationNote}<div class="item-meta-row"><span class="chip ${cc}">${r.severity.charAt(0).toUpperCase()+r.severity.slice(1)} Risk</span><span class="chip ${sc}">${statusLabel}</span>${r.isNew?`<span class="chip chip-new">new</span>`:""}${r.owner?`<span class="chip chip-gray">👤 ${r.owner}</span>`:""}${r.source?`<span class="item-source">${r.source}</span>`:""}</div>${historyHtml}</div><div class="item-actions"><button class="item-action-btn" onclick="showEditItem('risks','${r.id}')" title="Edit">✏</button><button class="item-action-btn danger" onclick="deleteItem('risks','${r.id}')" title="Delete">×</button></div></div>`;
     }).join("");
   }
   return "";
@@ -757,7 +767,7 @@ function saveItem() {
     const due = document.getElementById("item-due").value.trim() || null;
     const status = document.getElementById("item-status").value;
     if(id) proj.tasks = proj.tasks.map(t=>t.id===id ? {...t,text,owner,due,status} : t);
-    else proj.tasks.push({id:genId(),text,owner,due,status,source:"Manual",isNew:false});
+    else proj.tasks.push({id:genId(),text,owner,due,status,source:"Manual",isNew:false,priority:"medium",updates:[],closedReason:""});
   } else if(type==="decisions") {
     const by = document.getElementById("item-by").value.trim() || null;
     const date = document.getElementById("item-date").value.trim() || null;
