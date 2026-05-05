@@ -6,6 +6,7 @@
 <title>Project Bob</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.6.0/mammoth.browser.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/docx/7.8.2/docx.umd.min.js"></script>
 <style>
   @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&family=DM+Mono:wght@400;500&display=swap');
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -241,6 +242,10 @@
       <button class="modal-close" onclick="closeModal('eod-modal')">×</button>
     </div>
     <div id="eod-body" class="modal-body">Generating your brief...</div>
+    <div id="eod-footer" style="display:none;margin-top:16px;padding-top:14px;border-top:1px solid var(--border);justify-content:flex-end;gap:8px;">
+      <button class="btn btn-secondary btn-sm" onclick="closeModal('eod-modal')">Close</button>
+      <button class="btn btn-primary btn-sm" onclick="downloadEODAsWord()">⬇ Download as Word</button>
+    </div>
   </div>
 </div>
 
@@ -615,10 +620,16 @@ Identify updates to existing items (by id) and new items to add. Return JSON wit
   isProcessing=false;
 }
 
+let eodBriefText = "";
+let eodBriefProjectName = "";
+
 async function showEOD() {
   const proj=getPS();
   if(!proj) { showToast("Select a project first"); return; }
+  eodBriefText = "";
+  eodBriefProjectName = proj.name;
   document.getElementById("eod-modal").style.display="flex";
+  document.getElementById("eod-footer").style.display="none";
   document.getElementById("eod-body").innerHTML=`<div style="display:flex;align-items:center;gap:10px;color:var(--text3);"><div class="spinner" style="border-top-color:var(--accent);border-color:var(--border2);"></div>Bob is preparing your brief...</div>`;
   try {
     const result=await callBob(
@@ -626,6 +637,8 @@ async function showEOD() {
       `Project: ${proj.name}\n${proj.desc?"Description: "+proj.desc+"\n":""}\nCurrent state:\n${JSON.stringify({tasks:proj.tasks,decisions:proj.decisions,risks:proj.risks},null,2)}`
     );
     document.getElementById("eod-body").textContent=result;
+    eodBriefText = result;
+    document.getElementById("eod-footer").style.display="flex";
   } catch(e) {
     document.getElementById("eod-body").textContent="Could not generate brief. Please check your API key in Settings.";
   }
@@ -1016,6 +1029,110 @@ function applyReview(acceptAll) {
 function confirmSelected() { applyReview(false); }
 function confirmAll()      { applyReview(true); }
 function cancelReview()    { pendingReview=null; reviewAccepted={}; closeModal("review-modal"); }
+
+// ---- WORD EXPORT ----
+function parseEODSections(text) {
+  const known = ["PROJECT STATUS","KEY ACTIONS","DECISIONS MADE","RISKS & BLOCKERS","NEXT STEPS"];
+  const sections = {};
+  let current = null, buf = [];
+  for(const line of text.split("\n")) {
+    const t = line.trim();
+    if(known.includes(t)) {
+      if(current !== null) sections[current] = buf.join("\n").trim();
+      current = t; buf = [];
+    } else if(current !== null) {
+      buf.push(line);
+    }
+  }
+  if(current !== null) sections[current] = buf.join("\n").trim();
+  return sections;
+}
+
+async function downloadEODAsWord() {
+  if(!eodBriefText) { showToast("Brief not ready"); return; }
+  if(typeof docx === "undefined") { showToast("Word library not loaded"); return; }
+
+  const { Document, Paragraph, TextRun, Packer, BorderStyle } = docx;
+
+  const dateStr = new Date().toLocaleDateString("en-GB", {
+    weekday:"long", year:"numeric", month:"long", day:"numeric"
+  });
+
+  const sectionOrder = ["PROJECT STATUS","KEY ACTIONS","DECISIONS MADE","RISKS & BLOCKERS","NEXT STEPS"];
+  const parsed = parseEODSections(eodBriefText);
+
+  const children = [];
+
+  // Letterhead
+  children.push(
+    new Paragraph({
+      children: [new TextRun({ text:"WARWICK BAILEY ASSOCIATES", bold:true, size:40, color:"2563EB", font:"Calibri" })],
+      spacing:{ after:80 }
+    }),
+    new Paragraph({
+      children: [new TextRun({ text:"Project Intelligence Report", size:22, color:"5A6478", font:"Calibri", italics:true })],
+      border:{ bottom:{ color:"2563EB", space:6, style:BorderStyle.SINGLE, size:4 } },
+      spacing:{ after:360 }
+    }),
+    new Paragraph({
+      children: [new TextRun({ text:eodBriefProjectName, bold:true, size:32, color:"1A2035", font:"Calibri" })],
+      spacing:{ after:80 }
+    }),
+    new Paragraph({
+      children: [new TextRun({ text:`End-of-Day Brief  ·  ${dateStr}`, size:20, color:"5A6478", font:"Calibri", italics:true })],
+      spacing:{ after:480 }
+    })
+  );
+
+  // Sections
+  for(const name of sectionOrder) {
+    const content = parsed[name];
+    if(!content) continue;
+
+    children.push(new Paragraph({
+      children: [new TextRun({ text:name, bold:true, size:24, color:"2563EB", font:"Calibri" })],
+      border:{ bottom:{ color:"E4E8EF", space:4, style:BorderStyle.SINGLE, size:2 } },
+      spacing:{ before:320, after:160 }
+    }));
+
+    for(const line of content.split("\n")) {
+      const t = line.trim();
+      if(!t) { children.push(new Paragraph({ children:[], spacing:{ after:60 } })); continue; }
+      const indented = /^\d+\./.test(t) || /^[•·\-]/.test(t);
+      children.push(new Paragraph({
+        children: [new TextRun({ text:t, size:20, color:"1A2035", font:"Calibri" })],
+        indent: indented ? { left:360 } : undefined,
+        spacing:{ after:100 }
+      }));
+    }
+  }
+
+  // Footer
+  children.push(new Paragraph({
+    children: [new TextRun({ text:`Generated by Project Bob · Warwick Bailey Associates · ${new Date().toLocaleDateString("en-GB")}`, size:16, color:"9AA3B4", font:"Calibri", italics:true })],
+    border:{ top:{ color:"E4E8EF", space:6, style:BorderStyle.SINGLE, size:2 } },
+    spacing:{ before:600, after:0 }
+  }));
+
+  try {
+    const doc = new Document({
+      creator:"Project Bob",
+      title:`${eodBriefProjectName} - End-of-Day Brief`,
+      sections:[{ properties:{}, children }]
+    });
+    const blob = await Packer.toBlob(doc);
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `${eodBriefProjectName.replace(/[^a-z0-9]/gi,"_")}_EOD_${new Date().toISOString().slice(0,10)}.docx`;
+    a.click();
+    URL.revokeObjectURL(url);
+    showToast("Word document downloaded");
+  } catch(err) {
+    showToast("Could not generate Word document");
+    console.error(err);
+  }
+}
 
 // ---- BOOT ----
 const existingKey = getKey();
