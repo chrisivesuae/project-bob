@@ -6,7 +6,7 @@
 <title>Project Bob</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.6.0/mammoth.browser.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/docx/7.8.2/docx.umd.min.js"></script>
+<script src="https://unpkg.com/docx@7.8.2/build/index.umd.js"></script>
 <style>
   @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&family=DM+Mono:wght@400;500&display=swap');
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -879,16 +879,61 @@ function exportClipboard() {
 function exportCSV() {
   const proj = getPS();
   if(!proj) return;
-  const rows = [["Type","Text","Status / Severity","Owner / By","Due / Date","Source"]];
-  proj.tasks.forEach(t => rows.push(["Task", t.text, t.status, t.owner||"", t.due||"", t.source||""]));
-  proj.decisions.forEach(d => rows.push(["Decision", d.text, "", d.by||"", d.date||"", d.source||""]));
-  proj.risks.forEach(r => rows.push(["Risk", r.text, r.severity, r.owner||"", "", r.source||""]));
-  const csv = rows.map(r => r.map(cell => `"${String(cell).replace(/"/g,'""')}"`).join(",")).join("\n");
-  const blob = new Blob([csv], {type:"text/csv"});
+
+  const q = s => `"${String(s == null ? "" : s).replace(/"/g, '""')}"`;
+  const row = cells => cells.map(q).join(",");
+  const blank = () => "";
+  const dateStr = new Date().toLocaleDateString("en-GB", { day:"2-digit", month:"short", year:"numeric" });
+
+  const statusLabel = s => s === "in-progress" ? "In Progress" : s === "done" ? "Done" : "Open";
+  const severityLabel = s => s ? s.charAt(0).toUpperCase() + s.slice(1) : "";
+
+  const lines = [];
+
+  // Title block
+  lines.push(row([`Project: ${proj.name}`, blank(), blank(), blank(), blank(), blank()]));
+  lines.push(row([`Exported: ${dateStr}`, blank(), blank(), blank(), blank(), blank()]));
+  lines.push(row([proj.desc || blank(), blank(), blank(), blank(), blank(), blank()]));
+  lines.push("");
+
+  // Tasks
+  lines.push(row(["TASKS", blank(), blank(), blank(), blank(), blank()]));
+  lines.push(row(["#", "Task", "Status", "Owner", "Due Date", "Source"]));
+  if(proj.tasks.length) {
+    [...proj.tasks.filter(t => t.status !== "done"), ...proj.tasks.filter(t => t.status === "done")]
+      .forEach((t, i) => lines.push(row([i + 1, t.text, statusLabel(t.status), t.owner || "", t.due || "", t.source || ""])));
+  } else {
+    lines.push(row(["No tasks recorded.", blank(), blank(), blank(), blank(), blank()]));
+  }
+  lines.push("");
+
+  // Decisions
+  lines.push(row(["DECISIONS", blank(), blank(), blank(), blank(), blank()]));
+  lines.push(row(["#", "Decision", blank(), "Made By", "Date", "Source"]));
+  if(proj.decisions.length) {
+    proj.decisions.forEach((d, i) => lines.push(row([i + 1, d.text, blank(), d.by || "", d.date || "", d.source || ""])));
+  } else {
+    lines.push(row(["No decisions recorded.", blank(), blank(), blank(), blank(), blank()]));
+  }
+  lines.push("");
+
+  // Risks
+  lines.push(row(["RISKS & BLOCKERS", blank(), blank(), blank(), blank(), blank()]));
+  lines.push(row(["#", "Risk / Blocker", "Severity", "Owner", blank(), "Source"]));
+  if(proj.risks.length) {
+    [...proj.risks.filter(r => r.severity === "high"), ...proj.risks.filter(r => r.severity === "medium"), ...proj.risks.filter(r => r.severity === "low")]
+      .forEach((r, i) => lines.push(row([i + 1, r.text, severityLabel(r.severity), r.owner || "", blank(), r.source || ""])));
+  } else {
+    lines.push(row(["No risks recorded.", blank(), blank(), blank(), blank(), blank()]));
+  }
+
+  // Excel UTF-8 BOM so accented characters render correctly
+  const csv = "﻿" + lines.join("\r\n");
+  const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
-  a.download = `${proj.name.replace(/[^a-z0-9]/gi,"_")}_export.csv`;
+  a.download = `${proj.name.replace(/[^a-z0-9]/gi, "_")}_${new Date().toISOString().slice(0, 10)}.csv`;
   a.click();
   URL.revokeObjectURL(url);
   showToast("CSV downloaded");
@@ -1050,7 +1095,7 @@ function parseEODSections(text) {
 
 async function downloadEODAsWord() {
   if(!eodBriefText) { showToast("Brief not ready"); return; }
-  if(typeof docx === "undefined") { showToast("Word library not loaded"); return; }
+  if(typeof window.docx === "undefined") { showToast("Word library not loaded"); return; }
 
   const { Document, Paragraph, TextRun, Packer, BorderStyle } = docx;
 
