@@ -6,6 +6,11 @@
 <title>Project Bob</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.6.0/mammoth.browser.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<script src="https://cdn.sheetjs.com/xlsx-0.20.1/package/dist/xlsx.full.min.js"></script>
+<script type="module">
+  import MsgReader from 'https://cdn.jsdelivr.net/npm/@kenjiuno/msgreader@1.8.8/+esm';
+  window.MsgReader = MsgReader;
+</script>
 <style>
   @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&family=DM+Mono:wght@400;500&display=swap');
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -469,7 +474,7 @@ function renderContent() {
       <div style="display:flex;gap:8px;flex-wrap:wrap;">
         <button class="btn btn-secondary btn-sm" onclick="toggleFeed()">${showFeed?"Hide Feed":"+ Feed Bob"}</button>
         <button class="btn btn-secondary btn-sm" onclick="exportClipboard()">Copy All</button>
-        <button class="btn btn-secondary btn-sm" onclick="exportCSV()">Export CSV</button>
+        <button class="btn btn-secondary btn-sm" onclick="exportExcel()">Export Excel</button>
         <button class="btn btn-primary btn-sm" onclick="showEOD()">End-of-Day Brief</button>
       </div>
     </div>
@@ -511,9 +516,9 @@ function renderFeedPanel() {
     <div class="drop-zone" id="drop-zone" onclick="document.getElementById('file-input').click()" ondragover="handleDragOver(event)" ondragleave="handleDragLeave(event)" ondrop="handleDrop(event)">
       <div class="drop-zone-icon">📎</div>
       <div>Drop a file here or <span style="color:var(--accent);text-decoration:underline;">browse</span></div>
-      <div style="margin-top:3px;font-size:11px;">.txt · .eml · .md · .csv · .docx · .pdf</div>
+      <div style="margin-top:3px;font-size:11px;">.txt · .eml · .msg · .md · .csv · .docx · .pdf</div>
     </div>
-    <input type="file" id="file-input" accept=".txt,.eml,.md,.csv,.docx,.pdf" style="display:none;" onchange="handleFileInput(event)" />
+    <input type="file" id="file-input" accept=".txt,.eml,.msg,.md,.csv,.docx,.pdf" style="display:none;" onchange="handleFileInput(event)" />
     <textarea class="feed-ta" id="feed-ta" placeholder="Paste your ${activeType.toLowerCase()} here, or drop a file above — Bob will automatically extract tasks, decisions and risks..."></textarea>
     <div style="display:flex;justify-content:flex-end;margin-top:10px;">
       <button class="btn btn-primary" id="process-btn" onclick="processFeed()">Process →</button>
@@ -754,7 +759,7 @@ function deleteItem(type, id) {
 }
 
 // ---- FILE DROP ----
-const ALLOWED_EXTS = ["txt","eml","md","csv","docx","pdf"];
+const ALLOWED_EXTS = ["txt","eml","msg","md","csv","docx","pdf"];
 
 if(typeof pdfjsLib !== "undefined") {
   pdfjsLib.GlobalWorkerOptions.workerSrc = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
@@ -787,7 +792,59 @@ function populateFeedTextarea(text, filename) {
 function readDroppedFile(file) {
   const ext = file.name.split(".").pop().toLowerCase();
   if(!ALLOWED_EXTS.includes(ext)) {
-    showToast("Unsupported file — use .txt, .eml, .md, .csv, .docx or .pdf");
+    showToast("Unsupported file — use .txt, .eml, .msg, .md, .csv, .docx or .pdf");
+    return;
+  }
+
+  if(ext === "msg") {
+    const fileReader = new FileReader();
+    fileReader.onload = async (ev) => {
+      try {
+        if(!window.MsgReader) {
+          const mod = await import("https://cdn.jsdelivr.net/npm/@kenjiuno/msgreader@1.8.8/+esm");
+          window.MsgReader = mod.default;
+        }
+        const msgReader = new window.MsgReader(ev.target.result);
+        const data = msgReader.getFileData();
+
+        const senderEmail = data.senderEmail || data.senderSmtpAddress || "";
+        const fromStr = data.senderName
+          ? (senderEmail ? `${data.senderName} <${senderEmail}>` : data.senderName)
+          : senderEmail || "(unknown sender)";
+
+        const formatRecipients = (list) =>
+          list.map(r => {
+            const em = r.email || r.smtpAddress || "";
+            return r.name ? (em ? `${r.name} <${em}>` : r.name) : em;
+          }).filter(Boolean).join("; ");
+
+        const toList  = formatRecipients((data.recipients || []).filter(r => !r.recipType || r.recipType === 1));
+        const ccList  = formatRecipients((data.recipients || []).filter(r => r.recipType === 2));
+
+        let dateStr = "";
+        if(data.messageDeliveryTime) {
+          const d = new Date(data.messageDeliveryTime);
+          if(!isNaN(d.getTime())) dateStr = d.toLocaleString("en-GB", { dateStyle: "long", timeStyle: "short" });
+        }
+
+        const lines = [
+          `From: ${fromStr}`,
+          toList  ? `To: ${toList}`   : null,
+          ccList  ? `CC: ${ccList}`   : null,
+          `Subject: ${data.subject || "(no subject)"}`,
+          dateStr ? `Date: ${dateStr}` : null,
+          "",
+          data.body || "(no body)"
+        ].filter(l => l !== null).join("\n");
+
+        populateFeedTextarea(lines.trim(), file.name);
+      } catch(err) {
+        console.error("MSG read error:", err);
+        showToast("Could not read .msg file");
+      }
+    };
+    fileReader.onerror = () => showToast("Could not read file");
+    fileReader.readAsArrayBuffer(file);
     return;
   }
 
@@ -875,67 +932,69 @@ function exportClipboard() {
     .catch(() => showToast("Copy failed — try again"));
 }
 
-function exportCSV() {
+function exportExcel() {
   const proj = getPS();
   if(!proj) return;
 
-  const q = s => `"${String(s == null ? "" : s).replace(/"/g, '""')}"`;
-  const row = cells => cells.map(q).join(",");
-  const blank = () => "";
-  const dateStr = new Date().toLocaleDateString("en-GB", { day:"2-digit", month:"short", year:"numeric" });
+  const dateStr = new Date().toISOString().slice(0, 10);
+  const filename = `${proj.name.replace(/[^a-z0-9]/gi, "_")}_Export_${dateStr}.xlsx`;
 
+  const headerStyle = { font: { bold: true, color: { rgb: "2563EB" } } };
   const statusLabel = s => s === "in-progress" ? "In Progress" : s === "done" ? "Done" : "Open";
   const severityLabel = s => s ? s.charAt(0).toUpperCase() + s.slice(1) : "";
 
-  const lines = [];
+  function styleHeaders(ws, numCols) {
+    for(let c = 0; c < numCols; c++) {
+      const addr = XLSX.utils.encode_cell({ r: 0, c });
+      if(ws[addr]) ws[addr].s = headerStyle;
+    }
+  }
 
-  // Title block
-  lines.push(row([`Project: ${proj.name}`, blank(), blank(), blank(), blank(), blank()]));
-  lines.push(row([`Exported: ${dateStr}`, blank(), blank(), blank(), blank(), blank()]));
-  lines.push(row([proj.desc || blank(), blank(), blank(), blank(), blank(), blank()]));
-  lines.push("");
+  const wb = XLSX.utils.book_new();
 
-  // Tasks
-  lines.push(row(["TASKS", blank(), blank(), blank(), blank(), blank()]));
-  lines.push(row(["#", "Task", "Status", "Owner", "Due Date", "Source"]));
+  // Tasks sheet
+  const taskHeaders = ["#", "Task", "Status", "Owner", "Due Date", "Source"];
+  const taskData = [taskHeaders];
   if(proj.tasks.length) {
     [...proj.tasks.filter(t => t.status !== "done"), ...proj.tasks.filter(t => t.status === "done")]
-      .forEach((t, i) => lines.push(row([i + 1, t.text, statusLabel(t.status), t.owner || "", t.due || "", t.source || ""])));
+      .forEach((t, i) => taskData.push([i + 1, t.text || "", statusLabel(t.status), t.owner || "", t.due || "", t.source || ""]));
   } else {
-    lines.push(row(["No tasks recorded.", blank(), blank(), blank(), blank(), blank()]));
+    taskData.push(["No tasks recorded.", "", "", "", "", ""]);
   }
-  lines.push("");
+  const wsT = XLSX.utils.aoa_to_sheet(taskData);
+  styleHeaders(wsT, taskHeaders.length);
+  wsT["!cols"] = [{ wch: 4 }, { wch: 50 }, { wch: 14 }, { wch: 18 }, { wch: 14 }, { wch: 18 }];
+  XLSX.utils.book_append_sheet(wb, wsT, "Tasks");
 
-  // Decisions
-  lines.push(row(["DECISIONS", blank(), blank(), blank(), blank(), blank()]));
-  lines.push(row(["#", "Decision", blank(), "Made By", "Date", "Source"]));
+  // Decisions sheet
+  const decHeaders = ["#", "Decision", "Made By", "Date", "Source"];
+  const decData = [decHeaders];
   if(proj.decisions.length) {
-    proj.decisions.forEach((d, i) => lines.push(row([i + 1, d.text, blank(), d.by || "", d.date || "", d.source || ""])));
+    proj.decisions.forEach((d, i) => decData.push([i + 1, d.text || "", d.by || "", d.date || "", d.source || ""]));
   } else {
-    lines.push(row(["No decisions recorded.", blank(), blank(), blank(), blank(), blank()]));
+    decData.push(["No decisions recorded.", "", "", "", ""]);
   }
-  lines.push("");
+  const wsD = XLSX.utils.aoa_to_sheet(decData);
+  styleHeaders(wsD, decHeaders.length);
+  wsD["!cols"] = [{ wch: 4 }, { wch: 55 }, { wch: 18 }, { wch: 14 }, { wch: 18 }];
+  XLSX.utils.book_append_sheet(wb, wsD, "Decisions");
 
-  // Risks
-  lines.push(row(["RISKS & BLOCKERS", blank(), blank(), blank(), blank(), blank()]));
-  lines.push(row(["#", "Risk / Blocker", "Severity", "Owner", blank(), "Source"]));
+  // Risks sheet
+  const riskHeaders = ["#", "Risk / Blocker", "Severity", "Owner", "Source"];
+  const riskData = [riskHeaders];
   if(proj.risks.length) {
     [...proj.risks.filter(r => r.severity === "high"), ...proj.risks.filter(r => r.severity === "medium"), ...proj.risks.filter(r => r.severity === "low")]
-      .forEach((r, i) => lines.push(row([i + 1, r.text, severityLabel(r.severity), r.owner || "", blank(), r.source || ""])));
+      .forEach((r, i) => riskData.push([i + 1, r.text || "", severityLabel(r.severity), r.owner || "", r.source || ""]));
   } else {
-    lines.push(row(["No risks recorded.", blank(), blank(), blank(), blank(), blank()]));
+    riskData.push(["No risks recorded.", "", "", "", ""]);
   }
+  const wsR = XLSX.utils.aoa_to_sheet(riskData);
+  styleHeaders(wsR, riskHeaders.length);
+  wsR["!cols"] = [{ wch: 4 }, { wch: 55 }, { wch: 12 }, { wch: 18 }, { wch: 18 }];
+  XLSX.utils.book_append_sheet(wb, wsR, "Risks");
 
-  // Excel UTF-8 BOM so accented characters render correctly
-  const csv = "﻿" + lines.join("\r\n");
-  const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = `${proj.name.replace(/[^a-z0-9]/gi, "_")}_${new Date().toISOString().slice(0, 10)}.csv`;
-  a.click();
-  URL.revokeObjectURL(url);
-  showToast("CSV downloaded");
+  XLSX.writeFile(wb, filename);
+  showToast("Excel file downloaded");
 }
 
 // ---- REVIEW MODAL ----
