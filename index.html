@@ -7,10 +7,7 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.6.0/mammoth.browser.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 <script src="https://cdn.sheetjs.com/xlsx-0.20.1/package/dist/xlsx.full.min.js"></script>
-<script type="module">
-  import MsgReader from 'https://cdn.jsdelivr.net/npm/@kenjiuno/msgreader@1.8.8/+esm';
-  window.MsgReader = MsgReader;
-</script>
+<script src="https://cdn.jsdelivr.net/npm/msgreader@1.1.6/lib/MsgReader.js"></script>
 <style>
   @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&family=DM+Mono:wght@400;500&display=swap');
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -798,49 +795,41 @@ function readDroppedFile(file) {
 
   if(ext === "msg") {
     const fileReader = new FileReader();
-    fileReader.onload = async (ev) => {
+    fileReader.onload = (ev) => {
       try {
-        if(!window.MsgReader) {
-          const mod = await import("https://cdn.jsdelivr.net/npm/@kenjiuno/msgreader@1.8.8/+esm");
-          window.MsgReader = mod.default;
-        }
-        const msgReader = new window.MsgReader(ev.target.result);
-        const data = msgReader.getFileData();
+        const MsgReaderClass = window.MsgReader;
+        if(!MsgReaderClass) throw new Error("MsgReader library not loaded");
+        const reader = new MsgReaderClass(ev.target.result);
+        const data = reader.getFileData();
+        if(!data || data.error) throw new Error(data && data.error ? data.error : "Parse failed");
 
-        const senderEmail = data.senderEmail || data.senderSmtpAddress || "";
+        const senderEmail = data.senderEmail || "";
         const fromStr = data.senderName
           ? (senderEmail ? `${data.senderName} <${senderEmail}>` : data.senderName)
           : senderEmail || "(unknown sender)";
 
         const formatRecipients = (list) =>
-          list.map(r => {
-            const em = r.email || r.smtpAddress || "";
+          (list || []).map(r => {
+            const em = r.email || "";
             return r.name ? (em ? `${r.name} <${em}>` : r.name) : em;
           }).filter(Boolean).join("; ");
 
-        const toList  = formatRecipients((data.recipients || []).filter(r => !r.recipType || r.recipType === 1));
-        const ccList  = formatRecipients((data.recipients || []).filter(r => r.recipType === 2));
-
-        let dateStr = "";
-        if(data.messageDeliveryTime) {
-          const d = new Date(data.messageDeliveryTime);
-          if(!isNaN(d.getTime())) dateStr = d.toLocaleString("en-GB", { dateStyle: "long", timeStyle: "short" });
-        }
+        const toList = formatRecipients((data.recipients || []).filter(r => !r.recipType || r.recipType === 1));
+        const ccList = formatRecipients((data.recipients || []).filter(r => r.recipType === 2));
 
         const lines = [
           `From: ${fromStr}`,
-          toList  ? `To: ${toList}`   : null,
-          ccList  ? `CC: ${ccList}`   : null,
+          toList ? `To: ${toList}` : null,
+          ccList ? `CC: ${ccList}` : null,
           `Subject: ${data.subject || "(no subject)"}`,
-          dateStr ? `Date: ${dateStr}` : null,
           "",
-          data.body || "(no body)"
+          data.bodyText || "(no body)"
         ].filter(l => l !== null).join("\n");
 
         populateFeedTextarea(lines.trim(), file.name);
       } catch(err) {
         console.error("MSG read error:", err);
-        showToast("Could not read .msg file");
+        showToast("Could not read .msg file — please save as .eml from Outlook instead");
       }
     };
     fileReader.onerror = () => showToast("Could not read file");
