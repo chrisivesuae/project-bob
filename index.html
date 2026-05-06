@@ -839,8 +839,42 @@ function handleDragLeave(e) {
 function handleDrop(e) {
   e.preventDefault();
   document.getElementById("drop-zone")?.classList.remove("drag-over");
-  const file = e.dataTransfer.files[0];
-  if(file) readDroppedFile(file);
+
+  const dt = e.dataTransfer;
+  console.log('[Bob] dataTransfer.types:', [...dt.types], '| files:', dt.files.length ? [...dt.files].map(f => `${f.name} (${f.type||'no type'})`).join(', ') : 'none');
+
+  // 1. text/plain — use directly
+  if(dt.types.includes("text/plain")) {
+    const text = dt.getData("text/plain");
+    if(text && text.trim()) { populateFeedTextarea(text.trim(), "dragged text"); return; }
+  }
+
+  // 2. text/html — strip tags to plain text
+  if(dt.types.includes("text/html")) {
+    const html = dt.getData("text/html");
+    if(html && html.trim()) {
+      const tmp = document.createElement("div");
+      tmp.innerHTML = html;
+      const text = (tmp.innerText || tmp.textContent || "").trim();
+      if(text) { populateFeedTextarea(text, "dragged email"); return; }
+    }
+  }
+
+  // 3. message/rfc822 — read first file as text
+  if(dt.types.includes("message/rfc822") && dt.files.length) {
+    const file = dt.files[0];
+    const reader = new FileReader();
+    reader.onload = ev => populateFeedTextarea(ev.target.result, file.name || "message.eml");
+    reader.onerror = () => showToast("Could not read RFC822 message");
+    reader.readAsText(file);
+    return;
+  }
+
+  // 4 & 5. File drop fallback
+  const file = dt.files[0];
+  if(file) { readDroppedFile(file); return; }
+
+  showToast("Nothing readable found — try pasting the text instead");
 }
 function handleFileInput(e) {
   const file = e.target.files[0];
@@ -853,22 +887,45 @@ function populateFeedTextarea(text, filename) {
   if(ta) { ta.value = text; ta.focus(); showToast(`Loaded: ${filename}`); }
 }
 
-function readDroppedFile(file) {
-  const ext = file.name.split(".").pop().toLowerCase();
-  if(!ALLOWED_EXTS.includes(ext)) {
-    showToast("Unsupported file — use .txt, .eml, .msg, .md, .csv, .docx or .pdf");
-    return;
+// Scan an ArrayBuffer for UTF-16LE text runs (Outlook .msg stores properties as UTF-16LE)
+function extractMsgStrings(buffer) {
+  const u8 = new Uint8Array(buffer);
+  const MIN_LEN = 15;
+  const results = [];
+  let i = 0;
+  while(i < u8.length - 1) {
+    if(u8[i+1] === 0x00 && u8[i] >= 0x20 && u8[i] <= 0x7e) {
+      const chars = [];
+      while(i < u8.length - 1 && u8[i+1] === 0x00) {
+        const c = u8[i];
+        if(c === 0x0a || c === 0x0d) { chars.push('\n'); i += 2; continue; }
+        if(c === 0x09) { chars.push(' '); i += 2; continue; }
+        if(c >= 0x20 && c <= 0x7e) { chars.push(String.fromCharCode(c)); i += 2; continue; }
+        break;
+      }
+      const s = chars.join('').trim();
+      if(s.length >= MIN_LEN) results.push(s);
+    } else {
+      i++;
+    }
   }
+  const seen = new Set();
+  return results.filter(s => !seen.has(s) && seen.add(s)).join('\n\n').trim();
+}
+
+function readDroppedFile(file) {
+  const ext = file.name.includes('.') ? file.name.split(".").pop().toLowerCase() : "";
 
   if(ext === "msg") {
     const fileReader = new FileReader();
     fileReader.onload = (ev) => {
+      // First try MsgReader library for structured extraction
       try {
         const MsgReaderClass = window.MsgReader;
-        if(!MsgReaderClass) throw new Error("MsgReader library not loaded");
+        if(!MsgReaderClass) throw new Error("MsgReader not loaded");
         const reader = new MsgReaderClass(ev.target.result);
         const data = reader.getFileData();
-        if(!data || data.error) throw new Error(data && data.error ? data.error : "Parse failed");
+        if(!data || data.error) throw new Error(data?.error || "Parse failed");
 
         const senderEmail = data.senderEmail || "";
         const fromStr = data.senderName
@@ -895,8 +952,15 @@ function readDroppedFile(file) {
 
         populateFeedTextarea(lines.trim(), file.name);
       } catch(err) {
-        console.error("MSG read error:", err);
-        showToast("Could not read .msg file — please save as .eml from Outlook instead");
+        // MsgReader failed — fall back to UTF-16LE string scan
+        console.warn("MsgReader failed, trying UTF-16 scan:", err);
+        const extracted = extractMsgStrings(ev.target.result);
+        if(extracted) {
+          populateFeedTextarea(extracted, file.name + " (UTF-16 extracted)");
+          showToast("Extracted text from .msg via UTF-16 scan");
+        } else {
+          showToast("Could not read .msg — try dragging the email body directly or saving as .eml");
+        }
       }
     };
     fileReader.onerror = () => showToast("Could not read file");
@@ -928,8 +992,7 @@ function readDroppedFile(file) {
         for(let i = 1; i <= pdf.numPages; i++) {
           const page = await pdf.getPage(i);
           const content = await page.getTextContent();
-          const pageText = content.items.map(item => item.str).join(" ");
-          text += pageText + "\n";
+          text += content.items.map(item => item.str).join(" ") + "\n";
         }
         populateFeedTextarea(text.trim(), file.name);
       } catch(err) {
@@ -941,9 +1004,16 @@ function readDroppedFile(file) {
     return;
   }
 
-  // Plain text formats
+  // All other types (txt, eml, md, csv, unknown) — try reading as plain text
   const reader = new FileReader();
-  reader.onload = (e) => populateFeedTextarea(e.target.result, file.name);
+  reader.onload = (e) => {
+    const text = e.target.result;
+    if(text && text.trim()) {
+      populateFeedTextarea(text.trim(), file.name);
+    } else {
+      showToast(`Could not extract text from ${file.name}`);
+    }
+  };
   reader.onerror = () => showToast("Could not read file");
   reader.readAsText(file);
 }
