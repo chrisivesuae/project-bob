@@ -925,30 +925,91 @@ function populateFeedTextarea(text, filename) {
   if(ta) { ta.value = text; ta.focus(); showToast(`Loaded: ${filename}`); }
 }
 
-// Scan an ArrayBuffer for UTF-16LE text runs (Outlook .msg stores properties as UTF-16LE)
+// Returns true if a string looks like binary garbage rather than readable email content.
+function msgStringIsGarbage(s) {
+  // Too short
+  if(s.length < 20) return true;
+  // GUID / UUID  {xxxxxxxx-xxxx-...}
+  if(/^\{[0-9A-Fa-f\-]{30,}\}$/.test(s)) return true;
+  // OLE/CFB stream names and property tag identifiers
+  if(/^_{1,}[A-Za-z0-9_]+$/.test(s)) return true;
+  // Pure hex strings (property tag values, hashes)
+  if(/^[0-9A-Fa-f]{16,}$/.test(s)) return true;
+  // Windows file paths
+  if(/^[A-Za-z]:\\/.test(s) || /^\\\\/.test(s)) return true;
+  // RTF-heavy: if more than 20% of chars are RTF control characters
+  const rtfChars = (s.match(/[\\{}|]/g) || []).length;
+  if(rtfChars / s.length > 0.20) return true;
+  // Looks like a MIME or XML token (no spaces, colons/slashes dominate)
+  if(!/\s/.test(s) && /[:\/=]{3,}/.test(s)) return true;
+  // Letter ratio too low — real sentences are mostly letters + spaces
+  const letters = (s.match(/[A-Za-z]/g) || []).length;
+  if(letters / s.length < 0.40) return true;
+  // Needs at least two whitespace-separated words of 2+ chars
+  const words = s.trim().split(/\s+/).filter(w => w.length >= 2);
+  if(words.length < 2) return true;
+  // Excessive character repetition (e.g. runs of the same char > 45%)
+  const freq = {};
+  for(const c of s) freq[c] = (freq[c] || 0) + 1;
+  if(Math.max(...Object.values(freq)) / s.length > 0.45) return true;
+  return false;
+}
+
+// Scan an ArrayBuffer for UTF-16LE text runs.
+// Outlook .msg (OLE Compound File) stores all string properties — subject, body,
+// sender, recipients — as raw UTF-16LE bytes inside stream sectors.
+// Pattern: each character is two bytes [lo, 0x00] for basic ASCII range.
 function extractMsgStrings(buffer) {
   const u8 = new Uint8Array(buffer);
-  const MIN_LEN = 15;
-  const results = [];
+  const MIN_LEN = 20;
+  const raw = [];
   let i = 0;
+
   while(i < u8.length - 1) {
-    if(u8[i+1] === 0x00 && u8[i] >= 0x20 && u8[i] <= 0x7e) {
+    const lo = u8[i], hi = u8[i + 1];
+
+    // Detect start of a UTF-16LE printable ASCII run: lo in [0x20..0x7e], hi = 0x00
+    if(hi === 0x00 && lo >= 0x20 && lo <= 0x7e) {
       const chars = [];
-      while(i < u8.length - 1 && u8[i+1] === 0x00) {
-        const c = u8[i];
-        if(c === 0x0a || c === 0x0d) { chars.push('\n'); i += 2; continue; }
-        if(c === 0x09) { chars.push(' '); i += 2; continue; }
-        if(c >= 0x20 && c <= 0x7e) { chars.push(String.fromCharCode(c)); i += 2; continue; }
+
+      while(i < u8.length - 1) {
+        const b0 = u8[i], b1 = u8[i + 1];
+
+        // High byte must be 0x00 for the ASCII range we care about
+        if(b1 !== 0x00) break;
+
+        if(b0 === 0x0d || b0 === 0x0a) {
+          // Newline — absorb a CRLF pair as a single newline
+          chars.push('\n');
+          i += 2;
+          if(i < u8.length - 1 && u8[i] === 0x0a && u8[i + 1] === 0x00) i += 2;
+          continue;
+        }
+        if(b0 === 0x09) { chars.push(' '); i += 2; continue; }  // tab → space
+        if(b0 >= 0x20 && b0 <= 0x7e) { chars.push(String.fromCharCode(b0)); i += 2; continue; }
+
+        // Non-printable, non-whitespace — end the run
         break;
       }
-      const s = chars.join('').trim();
-      if(s.length >= MIN_LEN) results.push(s);
+
+      const s = chars.join('').replace(/\n{3,}/g, '\n\n').trim();
+      if(s.length >= MIN_LEN) raw.push(s);
     } else {
       i++;
     }
   }
+
+  // Filter and deduplicate
+  const meaningful = raw.filter(s => !msgStringIsGarbage(s));
   const seen = new Set();
-  return results.filter(s => !seen.has(s) && seen.add(s)).join('\n\n').trim();
+  const unique = meaningful.filter(s => !seen.has(s) && seen.add(s));
+
+  console.log(`[Bob] extractMsgStrings: ${raw.length} raw runs → ${meaningful.length} after garbage filter → ${unique.length} after dedup`);
+  unique.forEach((s, idx) => {
+    console.log(`[Bob]   [${idx}] ${s.length}ch: ${s.slice(0, 100).replace(/\n/g, '↵')}`);
+  });
+
+  return unique.join('\n\n').trim();
 }
 
 function readDroppedFile(file) {
