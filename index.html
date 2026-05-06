@@ -369,7 +369,7 @@ const BOB_SYSTEM = `You are Bob, an intelligent project management AI. Read proj
 
 ════ STEP 1: SCAN EXISTING ITEMS FIRST (mandatory before identifying anything new) ════
 
-Go through EVERY existing task, decision, and risk one by one. For each item ask: does this new content mention, reference, progress, complete, contradict, or add detail to this item?
+Go through EVERY existing task and decision one by one. For each item ask: does this new content mention, reference, progress, complete, contradict, or add detail to this item?
 
 MATCHING RULES — treat any of these as a match:
 - A person named in the existing item appears in the content doing something related to that item
@@ -393,12 +393,10 @@ One update entry per field changed. Common update patterns:
 - owner null → name: a person is identified as responsible in the content
 - due null → date: a deadline is mentioned in passing near the item's subject
 - text → enriched text: add a specific name, file, system, or clarifying detail from the content
-- severity low/medium → high: new information escalates a risk
-- severity high/medium → low: risk has been mitigated or resolved
 
 ════ STEP 3: ADD NEW ITEMS (conservative) ════
 
-Only add a new task, decision, or risk if it has NO plausible match among existing items.
+Only add a new task or decision if it has NO plausible match among existing items.
 When in doubt, propose an update rather than a new item. Duplicates are worse than missed items.
 
 ════ WHAT COUNTS AS EACH TYPE ════
@@ -413,17 +411,13 @@ DECISIONS — things already agreed or resolved (past tense).
 - Do NOT mark something as a decision if it is still under discussion or pending approval
 - "by" field = who made/approved the decision; "date" field = when it was made
 
-RISKS — threats, blockers, concerns, or uncertainties (not yet resolved).
-- Spot them via: "risk that", "concern about", "issue with", "blocked by", "waiting on", "cannot proceed until", "unclear whether", "TBC", "subject to", "outstanding", "overdue"
-- Severity: high = threatens delivery, safety, legal or significant cost; medium = material impact if unresolved within weeks; low = worth monitoring but not urgent
-
 ════ OUTPUT RULES ════
 - updates array: changes to EXISTING items only — use exact id, one entry per field, include oldValue, newValue, reason
-- tasks/decisions/risks arrays: ONLY genuinely new items with no match in existing state
+- tasks/decisions arrays: ONLY genuinely new items with no match in existing state
 - Use the document type as the "source" field for new items
 
 Return exactly this JSON shape — no other text:
-{"summary":"1-2 sentence summary of what was found","updates":[{"id":"existing-item-id","field":"status|due|owner|text|severity|by|date","oldValue":"current value or null","newValue":"new value","reason":"brief reason"}],"tasks":[{"id":"uid","text":"clear action","owner":null,"due":null,"status":"open","source":"source","isNew":true}],"decisions":[{"id":"uid","text":"what was decided","by":null,"date":null,"source":"source","isNew":true}],"risks":[{"id":"uid","text":"risk or blocker","severity":"low|medium|high","owner":null,"source":"source","isNew":true}],"changes":["each change made"]}`;
+{"summary":"1-2 sentence summary of what was found","updates":[{"id":"existing-item-id","field":"status|due|owner|text|by|date","oldValue":"current value or null","newValue":"new value","reason":"brief reason"}],"tasks":[{"id":"uid","text":"clear action","owner":null,"due":null,"status":"open","source":"source","isNew":true}],"decisions":[{"id":"uid","text":"what was decided","by":null,"date":null,"source":"source","isNew":true}],"changes":["each change made"]}`;
 
 let db = { projects: [] };
 let activeProject = null;
@@ -695,12 +689,12 @@ async function processFeed() {
 Input type: ${activeType}
 
 EXISTING PROJECT STATE (do not duplicate any of these):
-${JSON.stringify({tasks:proj.tasks,decisions:proj.decisions,risks:proj.risks},null,2)}
+${JSON.stringify({tasks:proj.tasks,decisions:proj.decisions},null,2)}
 
 NEW ${activeType.toUpperCase()} TO ANALYSE:
 ${text}
 
-Identify updates to existing items (by id) and new items to add. Return JSON with an updates array for changes to existing items, and separate tasks/decisions/risks arrays for new items only.`;
+Identify updates to existing items (by id) and new items to add. Return JSON with an updates array for changes to existing items, and separate tasks/decisions arrays for new items only.`;
     const result=await callBob(BOB_SYSTEM, prompt);
     const r=JSON.parse(result);
     btn.disabled=false; btn.innerHTML="Process →";
@@ -726,8 +720,8 @@ async function showEOD() {
   document.getElementById("eod-body").innerHTML=`<div style="display:flex;align-items:center;gap:10px;color:var(--text3);"><div class="spinner" style="border-top-color:var(--accent);border-color:var(--border2);"></div>Bob is preparing your brief...</div>`;
   try {
     const result=await callBob(
-      "You are Bob, a project management AI. Write a professional end-of-day project brief in plain text. No markdown symbols (**, ##, *, --). Use these sections separated by a blank line: PROJECT STATUS (1-2 sentence overview of overall health), KEY ACTIONS (numbered list of open tasks — include owner and due date where known, flag overdue items), DECISIONS MADE (brief list of logged decisions), RISKS & BLOCKERS (high risks first, each with a suggested mitigation), NEXT STEPS (top 3 priorities for tomorrow). Be specific and use names where available.",
-      `Project: ${proj.name}\n${proj.desc?"Description: "+proj.desc+"\n":""}\nCurrent state:\n${JSON.stringify({tasks:proj.tasks,decisions:proj.decisions,risks:proj.risks},null,2)}`
+      "You are Bob, a project management AI. Write a professional end-of-day project brief in plain text. No markdown symbols (**, ##, *, --). Use these sections separated by a blank line: PROJECT STATUS (1-2 sentence overview of overall health), KEY ACTIONS (numbered list of open tasks — include owner and due date where known, flag overdue items), DECISIONS MADE (brief list of logged decisions), NEXT STEPS (top 3 priorities for tomorrow). Be specific and use names where available.",
+      `Project: ${proj.name}\n${proj.desc?"Description: "+proj.desc+"\n":""}\nCurrent state:\n${JSON.stringify({tasks:proj.tasks,decisions:proj.decisions},null,2)}`
     );
     document.getElementById("eod-body").textContent=result;
     eodBriefText = result;
@@ -1182,14 +1176,6 @@ function exportClipboard() {
     lines.push(line);
   });
 
-  lines.push("", "RISKS & BLOCKERS", "─".repeat(40));
-  if(!proj.risks.length) { lines.push("No risks."); }
-  else [...proj.risks.filter(r=>r.severity==="high"), ...proj.risks.filter(r=>r.severity==="medium"), ...proj.risks.filter(r=>r.severity==="low")].forEach(r => {
-    let line = `[${r.severity.toUpperCase()}] ${r.text}`;
-    if(r.owner) line += `  [${r.owner}]`;
-    lines.push(line);
-  });
-
   navigator.clipboard.writeText(lines.join("\n"))
     .then(() => showToast("Copied to clipboard"))
     .catch(() => showToast("Copy failed — try again"));
@@ -1202,7 +1188,7 @@ function exportExcel() {
   const dateStr = new Date().toISOString().slice(0, 10);
   const filename = `${proj.name.replace(/[^a-z0-9]/gi, "_")}_Export_${dateStr}.xlsx`;
 
-  const headerStyle = { font: { bold: true, color: { rgb: "2563EB" } } };
+  const headerStyle = { font: { bold: true, color: { rgb: "1A237E" } } };
   const statusLabel = s => s === "in-progress" ? "In Progress" : s === "done" ? "Done" : "Open";
   const severityLabel = s => s ? s.charAt(0).toUpperCase() + s.slice(1) : "";
 
@@ -1242,20 +1228,6 @@ function exportExcel() {
   wsD["!cols"] = [{ wch: 4 }, { wch: 55 }, { wch: 18 }, { wch: 14 }, { wch: 18 }];
   XLSX.utils.book_append_sheet(wb, wsD, "Decisions");
 
-  // Risks sheet
-  const riskHeaders = ["#", "Risk / Blocker", "Severity", "Owner", "Source"];
-  const riskData = [riskHeaders];
-  if(proj.risks.length) {
-    [...proj.risks.filter(r => r.severity === "high"), ...proj.risks.filter(r => r.severity === "medium"), ...proj.risks.filter(r => r.severity === "low")]
-      .forEach((r, i) => riskData.push([i + 1, r.text || "", severityLabel(r.severity), r.owner || "", r.source || ""]));
-  } else {
-    riskData.push(["No risks recorded.", "", "", "", ""]);
-  }
-  const wsR = XLSX.utils.aoa_to_sheet(riskData);
-  styleHeaders(wsR, riskHeaders.length);
-  wsR["!cols"] = [{ wch: 4 }, { wch: 55 }, { wch: 12 }, { wch: 18 }, { wch: 18 }];
-  XLSX.utils.book_append_sheet(wb, wsR, "Risks");
-
   XLSX.writeFile(wb, filename);
   showToast("Excel file downloaded");
 }
@@ -1271,7 +1243,6 @@ function openReviewModal(r) {
   (r.updates||[]).forEach((_,i) => reviewAccepted[`u${i}`] = true);
   (r.tasks||[]).forEach((_,i) => reviewAccepted[`t${i}`] = true);
   (r.decisions||[]).forEach((_,i) => reviewAccepted[`d${i}`] = true);
-  (r.risks||[]).forEach((_,i) => reviewAccepted[`k${i}`] = true);
 
   const sumEl = document.getElementById("review-summary");
   if(r.summary) { sumEl.textContent = r.summary; sumEl.style.display = "block"; }
@@ -1289,7 +1260,6 @@ function renderReviewBody() {
   const updates = r.updates||[];
   const tasks = r.tasks||[];
   const decisions = r.decisions||[];
-  const risks = r.risks||[];
 
   if(updates.length) {
     html += `<div class="review-section-label">Proposed Updates (${updates.length})</div>`;
@@ -1297,7 +1267,7 @@ function renderReviewBody() {
       const key = `u${i}`;
       const acc = reviewAccepted[key];
       // Find the existing item to show its current text
-      const existing = proj.tasks.find(x=>x.id===u.id)||proj.decisions.find(x=>x.id===u.id)||proj.risks.find(x=>x.id===u.id);
+      const existing = proj.tasks.find(x=>x.id===u.id)||proj.decisions.find(x=>x.id===u.id);
       const label = existing ? esc(existing.text) : `(id: ${u.id})`;
       html += `<div class="review-item${acc?"":" rejected"}">
         <div class="review-item-title">${label}</div>
@@ -1318,8 +1288,7 @@ function renderReviewBody() {
 
   const newItems = [
     ...tasks.map((t,i)=>({item:t,key:`t${i}`,typeLabel:"Task",chipClass:"chip-blue"})),
-    ...decisions.map((d,i)=>({item:d,key:`d${i}`,typeLabel:"Decision",chipClass:"chip-purple"})),
-    ...risks.map((k,i)=>({item:k,key:`k${i}`,typeLabel:"Risk",chipClass:k.severity==="high"?"chip-red":k.severity==="medium"?"chip-amber":"chip-green"}))
+    ...decisions.map((d,i)=>({item:d,key:`d${i}`,typeLabel:"Decision",chipClass:"chip-purple"}))
   ];
 
   if(newItems.length) {
@@ -1366,7 +1335,7 @@ function applyReview(acceptAll) {
 
   (r.updates||[]).forEach((u,i) => {
     if(!reviewAccepted[`u${i}`]) return;
-    const item = proj.tasks.find(x=>x.id===u.id)||proj.decisions.find(x=>x.id===u.id)||proj.risks.find(x=>x.id===u.id);
+    const item = proj.tasks.find(x=>x.id===u.id)||proj.decisions.find(x=>x.id===u.id);
     if(item) {
       item[u.field]=u.newValue;
       if(Array.isArray(item.updates)) {
@@ -1382,10 +1351,6 @@ function applyReview(acceptAll) {
   (r.decisions||[]).forEach((d,i) => {
     if(!reviewAccepted[`d${i}`]) return;
     if(!proj.decisions.find(x=>x.id===d.id)) { proj.decisions.push(d); count++; }
-  });
-  (r.risks||[]).forEach((k,i) => {
-    if(!reviewAccepted[`k${i}`]) return;
-    if(!proj.risks.find(x=>x.id===k.id)) { proj.risks.push(k); count++; }
   });
 
   saveDB();
@@ -1404,7 +1369,7 @@ function cancelReview()    { pendingReview=null; reviewAccepted={}; closeModal("
 
 // ---- RTF EXPORT ----
 function parseEODSections(text) {
-  const known = ["PROJECT STATUS","KEY ACTIONS","DECISIONS MADE","RISKS & BLOCKERS","NEXT STEPS"];
+  const known = ["PROJECT STATUS","KEY ACTIONS","DECISIONS MADE","NEXT STEPS"];
   const sections = {};
   let current = null, buf = [];
   for(const line of text.split("\n")) {
@@ -1435,31 +1400,29 @@ function buildEODRtf(projectName, dateStr, parsedSections) {
   const e = rtfEscape;
   const NL = "\r\n";
 
-  // colortbl: cf1=#2563EB blue, cf2=#5A6478 slate, cf3=#1A2035 dark, cf4=#9AA3B4 light gray
+  // colortbl: cf1=#1A237E navy, cf2=#00BCD4 cyan, cf3=#333333 dark-grey, cf4=#5A6478 slate, cf5=#FFFFFF white
   let r = `{\\rtf1\\ansi\\ansicpg1252\\deff0\\deflang1033${NL}`;
   r += `{\\fonttbl{\\f0\\fswiss\\fcharset0 Calibri;}}${NL}`;
-  r += `{\\colortbl ;\\red37\\green99\\blue235;\\red90\\green100\\blue120;\\red26\\green32\\blue53;\\red154\\green163\\blue180;}${NL}`;
+  r += `{\\colortbl ;\\red26\\green35\\blue126;\\red0\\green188\\blue212;\\red51\\green51\\blue51;\\red90\\green100\\blue120;\\red255\\green255\\blue255;}${NL}`;
   r += `\\paperw12240\\paperh15840\\margl1800\\margr1800\\margt1440\\margb1440\\widowctrl${NL}`;
 
-  // WBA heading — 20pt bold blue
-  r += `\\pard\\sa80\\f0\\fs40\\b\\cf1 ${e("WARWICK BAILEY ASSOCIATES")}\\par${NL}`;
+  // Header — solid navy background (#1A237E), white text
+  r += `\\pard\\shading10000\\cbpat1\\sb0\\sa0\\f0\\fs44\\b\\cf5 ${e("PAUL WINTER CONSULTING LTD")}\\par${NL}`;
+  r += `\\pard\\shading10000\\cbpat1\\sb0\\sa300\\f0\\fs20\\b0\\i\\cf5 ${e("Project Intelligence Report")}\\par${NL}`;
 
-  // Subtitle — 11pt italic slate, blue bottom rule
-  r += `\\pard\\sa360\\brdrb\\brdrs\\brdrw15\\brdrcf1\\f0\\fs22\\b0\\i\\cf2 ${e("Project Intelligence Report")}\\par${NL}`;
+  // Project name — navy bold
+  r += `\\pard\\sb300\\sa80\\f0\\fs32\\b\\i0\\cf1 ${e(projectName)}\\par${NL}`;
 
-  // Project name — 16pt bold dark
-  r += `\\pard\\sa80\\f0\\fs32\\b\\i0\\cf3 ${e(projectName)}\\par${NL}`;
+  // Date — slate italic
+  r += `\\pard\\sa480\\f0\\fs20\\b0\\i\\cf4 ${e("End-of-Day Brief  ·  " + dateStr)}\\par${NL}`;
 
-  // Date — 10pt italic slate
-  r += `\\pard\\sa480\\f0\\fs20\\b0\\i\\cf2 ${e("End-of-Day Brief  ·  " + dateStr)}\\par${NL}`;
-
-  const sectionOrder = ["PROJECT STATUS","KEY ACTIONS","DECISIONS MADE","RISKS & BLOCKERS","NEXT STEPS"];
+  const sectionOrder = ["PROJECT STATUS","KEY ACTIONS","DECISIONS MADE","NEXT STEPS"];
   for(const name of sectionOrder) {
     const content = parsedSections[name];
     if(!content) continue;
 
-    // Section heading — 12pt bold blue, subtle gray bottom rule
-    r += `\\pard\\sb320\\sa160\\brdrb\\brdrs\\brdrw10\\brdrcf2\\f0\\fs24\\b\\i0\\cf1 ${e(name)}\\par${NL}`;
+    // Section heading — navy bold text, cyan (#00BCD4) bottom rule
+    r += `\\pard\\sb320\\sa160\\brdrb\\brdrs\\brdrw20\\brdrcf2\\f0\\fs24\\b\\i0\\cf1 ${e(name)}\\par${NL}`;
 
     for(const line of content.split("\n")) {
       const t = line.trim();
@@ -1469,8 +1432,8 @@ function buildEODRtf(projectName, dateStr, parsedSections) {
     }
   }
 
-  // Footer — 8pt italic light gray, top rule
-  r += `\\pard\\sb600\\brdrt\\brdrs\\brdrw10\\brdrcf4\\f0\\fs16\\b0\\i\\cf4 ${e("Generated by Project Bob · Warwick Bailey Associates · " + new Date().toLocaleDateString("en-GB"))}\\par${NL}`;
+  // Footer — navy italic, navy top rule
+  r += `\\pard\\sb600\\brdrt\\brdrs\\brdrw10\\brdrcf1\\f0\\fs16\\b0\\i\\cf1 ${e("Generated by Project Bob · Paul Winter Consulting Ltd · " + new Date().toLocaleDateString("en-GB"))}\\par${NL}`;
 
   r += "}";
   return r;
