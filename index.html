@@ -1237,6 +1237,8 @@ let pendingReview = null;
 let reviewAccepted = {};
 
 function openReviewModal(r) {
+  // Strip any risks the model may have returned despite not being asked
+  delete r.risks;
   pendingReview = r;
   reviewAccepted = {};
   // Default all items to accepted
@@ -1300,7 +1302,6 @@ function renderReviewBody() {
       if(item.due)   meta += `<span>📅 ${esc(item.due)}</span>`;
       if(item.by)    meta += `<span>👤 ${esc(item.by)}</span>`;
       if(item.date)  meta += `<span>📅 ${esc(item.date)}</span>`;
-      if(item.severity) meta += `<span>${esc(item.severity)} risk</span>`;
       html += `<div class="review-item${acc?"":" rejected"}">
         <div style="display:flex;align-items:center;gap:7px;margin-bottom:4px;">
           <span class="chip ${chipClass}">${typeLabel}</span>
