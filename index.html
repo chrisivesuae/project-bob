@@ -841,27 +841,60 @@ function handleDrop(e) {
   document.getElementById("drop-zone")?.classList.remove("drag-over");
 
   const dt = e.dataTransfer;
-  console.log('[Bob] dataTransfer.types:', [...dt.types], '| files:', dt.files.length ? [...dt.files].map(f => `${f.name} (${f.type||'no type'})`).join(', ') : 'none');
 
-  // 1. text/plain — use directly
-  if(dt.types.includes("text/plain")) {
-    const text = dt.getData("text/plain");
-    if(text && text.trim()) { populateFeedTextarea(text.trim(), "dragged text"); return; }
-  }
+  // ---- Diagnostic: log every type with content length ----
+  console.log('[Bob] ── Drop event ──────────────────────────');
+  console.log('[Bob] All types:', [...dt.types]);
+  [...dt.types].forEach(type => {
+    if(type === 'Files') {
+      console.log(`[Bob]   Files (${dt.files.length}):`,
+        [...dt.files].map(f => `"${f.name}" | MIME="${f.type||'(none)'}" | ${f.size}b`).join(' · '));
+    } else {
+      try {
+        const raw = dt.getData(type);
+        console.log(`[Bob]   ${type}: ${raw.length} chars` +
+          (raw.length ? ' | preview: ' + raw.slice(0, 120).replace(/[\r\n]+/g, '↵') : ' (empty)'));
+      } catch(err) {
+        console.log(`[Bob]   ${type}: read error — ${err.message}`);
+      }
+    }
+  });
+  if(dt.types.includes('application/x-moz-file'))
+    console.log('[Bob]   application/x-moz-file: present (Firefox/Thunderbird drag)');
+  console.log('[Bob] ───────────────────────────────────────');
 
-  // 2. text/html — strip tags to plain text
+  // ---- Gather text candidates; pick the longest ----
+  let bestText = "";
+  let bestSource = "";
+
+  // text/html — create a temp div, set innerHTML, read innerText (strips all tags)
   if(dt.types.includes("text/html")) {
     const html = dt.getData("text/html");
     if(html && html.trim()) {
       const tmp = document.createElement("div");
       tmp.innerHTML = html;
-      const text = (tmp.innerText || tmp.textContent || "").trim();
-      if(text) { populateFeedTextarea(text, "dragged email"); return; }
+      const stripped = (tmp.innerText || tmp.textContent || "").trim();
+      console.log(`[Bob] text/html stripped to ${stripped.length} chars`);
+      if(stripped.length > bestText.length) { bestText = stripped; bestSource = "dragged email (HTML)"; }
     }
   }
 
-  // 3. message/rfc822 — read first file as text
+  // text/plain — use directly; prefer over HTML only if longer
+  if(dt.types.includes("text/plain")) {
+    const plain = (dt.getData("text/plain") || "").trim();
+    console.log(`[Bob] text/plain: ${plain.length} chars`);
+    if(plain.length > bestText.length) { bestText = plain; bestSource = "dragged text"; }
+  }
+
+  if(bestText) {
+    console.log(`[Bob] Using "${bestSource}" (${bestText.length} chars)`);
+    populateFeedTextarea(bestText, bestSource);
+    return;
+  }
+
+  // message/rfc822 — read first file as text
   if(dt.types.includes("message/rfc822") && dt.files.length) {
+    console.log('[Bob] Trying message/rfc822 file read');
     const file = dt.files[0];
     const reader = new FileReader();
     reader.onload = ev => populateFeedTextarea(ev.target.result, file.name || "message.eml");
@@ -870,10 +903,15 @@ function handleDrop(e) {
     return;
   }
 
-  // 4 & 5. File drop fallback
+  // Files / application/x-moz-file — hand off to readDroppedFile
   const file = dt.files[0];
-  if(file) { readDroppedFile(file); return; }
+  if(file) {
+    console.log(`[Bob] Falling back to file read: "${file.name}"`);
+    readDroppedFile(file);
+    return;
+  }
 
+  console.log('[Bob] No usable content found in drop event');
   showToast("Nothing readable found — try pasting the text instead");
 }
 function handleFileInput(e) {
