@@ -193,6 +193,16 @@
   .tl-date { font-size: 10px; color: var(--text3); font-family: 'DM Mono', monospace; margin-bottom: 2px; }
   .tl-text { font-size: 12px; color: var(--text2); line-height: 1.4; }
   .tl-source { font-size: 10px; color: var(--text3); font-style: italic; margin-top: 2px; }
+  .dp-section-label { font-size: 10px; font-weight: 600; color: var(--text3); letter-spacing: 0.08em; text-transform: uppercase; margin-bottom: 8px; }
+  .dp-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 14px; }
+  .dp-grid .form-group { margin-bottom: 0; }
+  .dp-source { font-size: 11px; color: var(--text3); font-style: italic; margin: 6px 0 14px; }
+  .dp-history { margin-top: 16px; }
+  .dp-history-entries { border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 10px 12px; background: var(--surface2); }
+  .dp-add-update { margin-top: 10px; }
+  .dp-add-update-form { display: none; margin-top: 8px; padding: 12px; background: var(--surface2); border: 1px solid var(--border); border-radius: var(--radius-sm); }
+  .item-body-clickable { cursor: pointer; }
+  .item-body-clickable:hover .item-title { color: #1a237e; }
 </style>
 </head>
 <body>
@@ -354,6 +364,27 @@
       <button class="btn btn-secondary btn-sm" onclick="cancelReview()">Cancel</button>
       <button class="btn btn-secondary btn-sm" onclick="confirmSelected()">Confirm Selected</button>
       <button class="btn btn-primary btn-sm" onclick="confirmAll()">Confirm All</button>
+    </div>
+  </div>
+</div>
+
+<!-- DETAIL PANEL MODAL -->
+<div class="modal-backdrop" id="detail-modal" style="display:none;" onclick="detailBackdropClick(event)">
+  <div class="modal" style="max-width:640px;padding:24px;" onclick="event.stopPropagation()">
+    <div class="modal-header" style="margin-bottom:16px;">
+      <div style="display:flex;align-items:center;gap:10px;min-width:0;">
+        <div id="dp-num-badge" class="task-num-badge" style="display:none;flex-shrink:0;"></div>
+        <div class="modal-title" id="dp-title">Detail</div>
+      </div>
+      <button class="modal-close" onclick="closeModal('detail-modal')">×</button>
+    </div>
+    <div id="dp-body" style="overflow-y:auto;max-height:calc(80vh - 130px);padding-right:4px;"></div>
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-top:18px;padding-top:14px;border-top:1px solid var(--border);">
+      <button class="btn btn-danger" onclick="deleteDetailItem()">Delete</button>
+      <div style="display:flex;gap:8px;">
+        <button class="btn btn-secondary btn-sm" onclick="closeModal('detail-modal')">Cancel</button>
+        <button class="btn btn-primary btn-sm" onclick="saveDetailPanel()">Save</button>
+      </div>
     </div>
   </div>
 </div>
@@ -622,12 +653,12 @@ function renderList() {
       const priorityChip=`<span class="chip ${pc}">${priorityLabel}</span>`;
       const closedNote=t.status==="done"&&t.closedReason?`<div style="font-size:12px;color:var(--text3);font-style:italic;margin-top:3px;">${esc(t.closedReason)}</div>`:"";
       const timelineHtml=t.updates&&t.updates.length?`<div class="task-timeline">${t.updates.map(u=>{const entry=typeof u==="string"?u:(u.text||u.note||"");const dateRaw=typeof u==="object"?u.date||"":"";const srcStr=typeof u==="object"&&u.source?u.source:"";return `<div class="tl-entry"><div class="tl-line"></div><div class="tl-dot"></div><div class="tl-content">${dateRaw?`<div class="tl-date">${esc(fmtUpdateDate(dateRaw))}</div>`:""}<div class="tl-text">${esc(entry)}</div>${srcStr?`<div class="tl-source">${esc(srcStr)}</div>`:""}</div></div>`;}).join("")}</div>`:"";
-      return `<div class="item-card ${sc}">${t.taskNum?`<div class="task-num-badge">${t.taskNum}</div>`:""}<div class="item-body"><div class="item-title${t.status==="done"?" done":""}">${t.text}</div>${closedNote}<div class="item-meta-row">${priorityChip}${statusChip}${t.isNew?`<span class="chip chip-new">new</span>`:""}${t.owner?`<span class="chip chip-gray">👤 ${t.owner}</span>`:""}${t.due?`<span class="chip chip-amber">📅 ${t.due}</span>`:""}${t.source?`<span class="item-source">${t.source}</span>`:""}</div>${timelineHtml}</div><select class="status-select" onchange="setTaskStatus('${t.id}',this.value)"><option value="open"${t.status==="open"?" selected":""}>Open</option><option value="in-progress"${t.status==="in-progress"?" selected":""}>In Progress</option><option value="done"${t.status==="done"?" selected":""}>Done</option></select><div class="item-actions"><button class="item-action-btn" onclick="showEditItem('tasks','${t.id}')" title="Edit">✏</button><button class="item-action-btn danger" onclick="deleteItem('tasks','${t.id}')" title="Delete">×</button></div></div>`;
+      return `<div class="item-card ${sc}">${t.taskNum?`<div class="task-num-badge">${t.taskNum}</div>`:""}<div class="item-body item-body-clickable" onclick="openDetailPanel('tasks','${t.id}')"><div class="item-title${t.status==="done"?" done":""}">${t.text}</div>${closedNote}<div class="item-meta-row">${priorityChip}${statusChip}${t.isNew?`<span class="chip chip-new">new</span>`:""}${t.owner?`<span class="chip chip-gray">👤 ${t.owner}</span>`:""}${t.due?`<span class="chip chip-amber">📅 ${t.due}</span>`:""}${t.source?`<span class="item-source">${t.source}</span>`:""}</div>${timelineHtml}</div><select class="status-select" onchange="setTaskStatus('${t.id}',this.value)"><option value="open"${t.status==="open"?" selected":""}>Open</option><option value="in-progress"${t.status==="in-progress"?" selected":""}>In Progress</option><option value="done"${t.status==="done"?" selected":""}>Done</option></select><div class="item-actions"><button class="item-action-btn" onclick="openDetailPanel('tasks','${t.id}')" title="Edit">✏</button><button class="item-action-btn danger" onclick="deleteItem('tasks','${t.id}')" title="Delete">×</button></div></div>`;
     }).join("");
   }
   if(activeTab==="decisions") {
     if(!proj.decisions.length) return `<div class="empty">No decisions logged yet.</div>`;
-    return proj.decisions.map(d=>`<div class="item-card decision"><div class="item-body"><div class="item-title">${d.text}</div><div class="item-meta-row"><span class="chip chip-purple">Decision</span>${d.isNew?`<span class="chip chip-new">new</span>`:""}${d.by?`<span class="chip chip-gray">👤 ${d.by}</span>`:""}${d.date?`<span class="chip chip-purple">📅 ${d.date}</span>`:""}${d.source?`<span class="item-source">${d.source}</span>`:""}</div></div><div class="item-actions"><button class="item-action-btn" onclick="showEditItem('decisions','${d.id}')" title="Edit">✏</button><button class="item-action-btn danger" onclick="deleteItem('decisions','${d.id}')" title="Delete">×</button></div></div>`).join("");
+    return proj.decisions.map(d=>`<div class="item-card decision"><div class="item-body item-body-clickable" onclick="openDetailPanel('decisions','${d.id}')"><div class="item-title">${d.text}</div><div class="item-meta-row"><span class="chip chip-purple">Decision</span>${d.isNew?`<span class="chip chip-new">new</span>`:""}${d.by?`<span class="chip chip-gray">👤 ${d.by}</span>`:""}${d.date?`<span class="chip chip-purple">📅 ${d.date}</span>`:""}${d.source?`<span class="item-source">${d.source}</span>`:""}</div></div><div class="item-actions"><button class="item-action-btn" onclick="openDetailPanel('decisions','${d.id}')" title="Edit">✏</button><button class="item-action-btn danger" onclick="deleteItem('decisions','${d.id}')" title="Delete">×</button></div></div>`).join("");
   }
   if(activeTab==="risks") {
     if(!proj.risks.length) return `<div class="empty">No risks or blockers identified yet.</div>`;
@@ -852,6 +883,186 @@ function deleteItem(type, id) {
   saveDB();
   renderContent();
   showToast("Item deleted");
+}
+
+// ---- DETAIL PANEL ----
+let detailPanelState = { type: null, id: null };
+
+function openDetailPanel(type, id) {
+  const proj = getPS();
+  const arr = type === 'tasks' ? proj.tasks : proj.decisions;
+  const item = arr.find(x => x.id === id);
+  if(!item) return;
+  detailPanelState = { type, id };
+
+  document.getElementById('dp-title').textContent = type === 'tasks' ? 'Task Detail' : 'Decision Detail';
+  const numBadge = document.getElementById('dp-num-badge');
+  if(type === 'tasks' && item.taskNum) {
+    numBadge.textContent = item.taskNum; numBadge.style.display = 'inline-flex';
+  } else { numBadge.style.display = 'none'; }
+
+  document.getElementById('dp-body').innerHTML = type === 'tasks' ? buildTaskDetailHTML(item) : buildDecisionDetailHTML(item);
+  document.getElementById('detail-modal').style.display = 'flex';
+  setTimeout(() => document.getElementById('dp-text')?.focus(), 80);
+}
+
+function buildTaskDetailHTML(t) {
+  return `
+    <div class="form-group">
+      <label class="form-label">Task</label>
+      <textarea class="form-input" id="dp-text" rows="3" style="resize:vertical;">${esc(t.text||'')}</textarea>
+    </div>
+    <div class="dp-grid">
+      <div class="form-group">
+        <label class="form-label">Status</label>
+        <select class="form-input" id="dp-status">
+          <option value="open"${t.status==='open'?' selected':''}>Open</option>
+          <option value="in-progress"${t.status==='in-progress'?' selected':''}>In Progress</option>
+          <option value="done"${t.status==='done'?' selected':''}>Done</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Priority</label>
+        <select class="form-input" id="dp-priority">
+          <option value="low"${t.priority==='low'?' selected':''}>Low</option>
+          <option value="medium"${(!t.priority||t.priority==='medium')?' selected':''}>Medium</option>
+          <option value="high"${t.priority==='high'?' selected':''}>High</option>
+          <option value="critical"${t.priority==='critical'?' selected':''}>Critical</option>
+        </select>
+      </div>
+    </div>
+    <div class="dp-grid">
+      <div class="form-group">
+        <label class="form-label">Owner</label>
+        <input class="form-input" id="dp-owner" value="${esc(t.owner||'')}" placeholder="e.g. Chris" />
+      </div>
+      <div class="form-group">
+        <label class="form-label">Due Date</label>
+        <input class="form-input" id="dp-due" value="${esc(t.due||'')}" placeholder="e.g. 15 May" />
+      </div>
+    </div>
+    ${t.source?`<div class="dp-source">Source: ${esc(t.source)}</div>`:''}
+    <div class="form-group">
+      <label class="form-label">Mitigation / Notes</label>
+      <textarea class="form-input" id="dp-notes" rows="4" style="resize:vertical;min-height:90px;" placeholder="Add context, notes or mitigation steps...">${esc(t.notes||t.mitigation||'')}</textarea>
+    </div>
+    ${buildDetailHistoryHTML(t.updates||[])}
+    ${buildAddUpdateHTML()}`;
+}
+
+function buildDecisionDetailHTML(d) {
+  return `
+    <div class="form-group">
+      <label class="form-label">Decision</label>
+      <textarea class="form-input" id="dp-text" rows="3" style="resize:vertical;">${esc(d.text||'')}</textarea>
+    </div>
+    <div class="dp-grid">
+      <div class="form-group">
+        <label class="form-label">Made By</label>
+        <input class="form-input" id="dp-by" value="${esc(d.by||'')}" placeholder="e.g. Chris" />
+      </div>
+      <div class="form-group">
+        <label class="form-label">Date</label>
+        <input class="form-input" id="dp-date" value="${esc(d.date||'')}" placeholder="e.g. 6 May 2026" />
+      </div>
+    </div>
+    ${d.source?`<div class="dp-source">Source: ${esc(d.source)}</div>`:''}
+    <div class="form-group">
+      <label class="form-label">Notes</label>
+      <textarea class="form-input" id="dp-notes" rows="4" style="resize:vertical;min-height:90px;" placeholder="Add context or notes...">${esc(d.notes||'')}</textarea>
+    </div>
+    ${buildDetailHistoryHTML(d.updates||[])}
+    ${buildAddUpdateHTML()}`;
+}
+
+function buildDetailHistoryHTML(updates) {
+  const inner = updates.length
+    ? `<div class="dp-history-entries">${updates.map(u => {
+        const text = typeof u==='string' ? u : (u.text||u.note||'');
+        const dateRaw = typeof u==='object' ? (u.date||'') : '';
+        const src = typeof u==='object' ? (u.source||'') : '';
+        return `<div class="tl-entry"><div class="tl-line"></div><div class="tl-dot"></div><div class="tl-content">${dateRaw?`<div class="tl-date">${esc(fmtUpdateDate(dateRaw))}</div>`:''}<div class="tl-text">${esc(text)}</div>${src?`<div class="tl-source">${esc(src)}</div>`:''}</div></div>`;
+      }).join('')}</div>`
+    : `<div style="font-size:12px;color:var(--text3);padding:6px 0;">No updates yet.</div>`;
+  return `<div class="dp-history"><div class="dp-section-label">History</div>${inner}</div>`;
+}
+
+function buildAddUpdateHTML() {
+  const today = new Date().toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'numeric'});
+  return `<div class="dp-add-update">
+    <button class="btn btn-secondary btn-sm" id="dp-add-update-btn" onclick="toggleAddUpdate()" style="margin-top:8px;">+ Add Update</button>
+    <div class="dp-add-update-form" id="dp-add-update-form">
+      <div class="form-group" style="margin-bottom:8px;">
+        <label class="form-label">Update text</label>
+        <textarea class="form-input" id="dp-update-text" rows="2" style="resize:vertical;" placeholder="Describe the update..."></textarea>
+      </div>
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;">
+        <span style="font-size:11px;color:var(--text3);">Date: ${esc(today)}</span>
+        <div style="display:flex;gap:6px;">
+          <button class="btn btn-secondary btn-sm" onclick="toggleAddUpdate()">Cancel</button>
+          <button class="btn btn-primary btn-sm" onclick="submitDetailUpdate()">Add</button>
+        </div>
+      </div>
+    </div>
+  </div>`;
+}
+
+function toggleAddUpdate() {
+  const form = document.getElementById('dp-add-update-form');
+  const btn = document.getElementById('dp-add-update-btn');
+  if(!form) return;
+  const visible = form.style.display === 'block';
+  form.style.display = visible ? 'none' : 'block';
+  btn.textContent = visible ? '+ Add Update' : '− Add Update';
+  if(!visible) setTimeout(() => document.getElementById('dp-update-text')?.focus(), 50);
+}
+
+function submitDetailUpdate() {
+  const text = (document.getElementById('dp-update-text')?.value || '').trim();
+  if(!text) { showToast('Please enter update text'); return; }
+  const { type, id } = detailPanelState;
+  const proj = getPS();
+  const arr = type === 'tasks' ? proj.tasks : proj.decisions;
+  const item = arr.find(x => x.id === id);
+  if(!item) return;
+  if(!Array.isArray(item.updates)) item.updates = [];
+  item.updates.push({ date: new Date().toISOString(), text, source: 'Manual' });
+  saveDB();
+  openDetailPanel(type, id);
+  showToast('Update added');
+}
+
+function saveDetailPanel() {
+  const { type, id } = detailPanelState;
+  const text = (document.getElementById('dp-text')?.value || '').trim();
+  if(!text) { showToast('Please enter some text'); return; }
+  const notes = document.getElementById('dp-notes')?.value.trim() || '';
+  const proj = getPS();
+  if(type === 'tasks') {
+    const status   = document.getElementById('dp-status')?.value || 'open';
+    const priority = document.getElementById('dp-priority')?.value || 'medium';
+    const owner    = document.getElementById('dp-owner')?.value.trim() || null;
+    const due      = document.getElementById('dp-due')?.value.trim() || null;
+    proj.tasks = proj.tasks.map(t => t.id===id ? {...t,text,status,priority,owner,due,notes} : t);
+  } else {
+    const by   = document.getElementById('dp-by')?.value.trim() || null;
+    const date = document.getElementById('dp-date')?.value.trim() || null;
+    proj.decisions = proj.decisions.map(d => d.id===id ? {...d,text,by,date,notes} : d);
+  }
+  saveDB(); closeModal('detail-modal'); renderContent(); showToast('Saved');
+}
+
+function deleteDetailItem() {
+  if(!confirm('Delete this item?')) return;
+  const { type, id } = detailPanelState;
+  const proj = getPS();
+  if(type === 'tasks') proj.tasks = proj.tasks.filter(t => t.id!==id);
+  else proj.decisions = proj.decisions.filter(d => d.id!==id);
+  saveDB(); closeModal('detail-modal'); renderContent(); showToast('Item deleted');
+}
+
+function detailBackdropClick(e) {
+  if(e.target === e.currentTarget) closeModal('detail-modal');
 }
 
 // ---- FILE DROP ----
