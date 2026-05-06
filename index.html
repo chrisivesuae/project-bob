@@ -305,6 +305,27 @@
   </div>
 </div>
 
+<!-- PASTE EMAIL MODAL -->
+<div class="modal-backdrop" id="paste-modal" style="display:none;">
+  <div class="modal" style="max-width:560px;">
+    <div class="modal-header">
+      <div class="modal-title">📋 Paste Email from Outlook</div>
+      <button class="modal-close" onclick="closeModal('paste-modal')">×</button>
+    </div>
+    <div style="font-size:13px;color:var(--text2);line-height:1.6;margin-bottom:14px;padding:12px 14px;background:var(--surface2);border-radius:var(--radius-sm);border:1px solid var(--border);">
+      In Outlook, open the email then:<br>
+      1. Press <strong>Ctrl+A</strong> to select all content<br>
+      2. Press <strong>Ctrl+C</strong> to copy<br>
+      3. Click in the box below and press <strong>Ctrl+V</strong> to paste
+    </div>
+    <textarea id="paste-modal-ta" class="form-input" rows="12" style="resize:vertical;line-height:1.6;font-size:13px;min-height:200px;" placeholder="Paste email content here…"></textarea>
+    <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:14px;">
+      <button class="btn btn-secondary btn-sm" onclick="closeModal('paste-modal')">Cancel</button>
+      <button class="btn btn-primary btn-sm" onclick="confirmPaste()">Use This Content →</button>
+    </div>
+  </div>
+</div>
+
 <!-- ADD / EDIT ITEM MODAL -->
 <div class="modal-backdrop" id="item-modal" style="display:none;">
   <div class="modal" style="max-width:460px;">
@@ -572,8 +593,12 @@ function renderFeedPanel() {
       <div class="drop-zone-icon">📎</div>
       <div>Drop a file here or <span style="color:var(--accent);text-decoration:underline;">browse</span></div>
       <div style="margin-top:3px;font-size:11px;">.txt · .eml · .msg · .md · .csv · .docx · .pdf</div>
+      <div style="margin-top:5px;font-size:11px;color:var(--text3);">For Outlook emails: use the <strong style="color:var(--text2);">Paste Email</strong> button below</div>
     </div>
     <input type="file" id="file-input" accept=".txt,.eml,.msg,.md,.csv,.docx,.pdf" style="display:none;" onchange="handleFileInput(event)" />
+    <div style="display:flex;justify-content:flex-end;margin-bottom:10px;margin-top:6px;">
+      <button class="btn btn-secondary btn-sm" onclick="showPasteModal()">📋 Paste Email</button>
+    </div>
     <textarea class="feed-ta" id="feed-ta" placeholder="Paste your ${activeType.toLowerCase()} here, or drop a file above — Bob will automatically extract tasks, decisions and risks..."></textarea>
     <div style="display:flex;justify-content:flex-end;margin-top:10px;">
       <button class="btn btn-primary" id="process-btn" onclick="processFeed()">Process →</button>
@@ -713,6 +738,19 @@ async function showEOD() {
 }
 
 function closeModal(id) { document.getElementById(id).style.display="none"; }
+
+function showPasteModal() {
+  const ta = document.getElementById("paste-modal-ta");
+  ta.value = "";
+  document.getElementById("paste-modal").style.display = "flex";
+  setTimeout(() => ta.focus(), 80);
+}
+function confirmPaste() {
+  const text = (document.getElementById("paste-modal-ta").value || "").trim();
+  if(!text) { showToast("Nothing pasted yet"); return; }
+  closeModal("paste-modal");
+  populateFeedTextarea(text, "pasted email");
+}
 function showToast(msg) {
   const t=document.getElementById("toast");
   t.textContent=msg; t.classList.add("show");
